@@ -176,21 +176,24 @@ func ignoredTypes(files []*ast.File) map[string]bool {
 }
 
 // hasIgnoreDirective reports whether the comment group contains a
-// standin:ignore line. Both //standin:ignore and // standin:ignore are
-// accepted; a non-whitespace character right after the tag (e.g.
-// standin:ignoreXYZ) is rejected.
+// //standin:ignore line. Only the exact directive form is accepted — no
+// space after the comment marker, following the Go directive convention —
+// so ordinary prose mentioning "standin:ignore" never matches. A
+// non-whitespace character right after the tag (e.g. standin:ignoreXYZ) is
+// rejected too.
 func hasIgnoreDirective(doc *ast.CommentGroup) bool {
 	if doc == nil {
 		return false
 	}
 
+	const directive = "//" + directiveTag
+
 	for _, c := range doc.List {
-		body := strings.TrimSpace(strings.TrimPrefix(c.Text, "//"))
-		if !strings.HasPrefix(body, directiveTag) {
+		rest, ok := strings.CutPrefix(c.Text, directive)
+		if !ok {
 			continue
 		}
 
-		rest := body[len(directiveTag):]
 		if rest == "" {
 			return true
 		}

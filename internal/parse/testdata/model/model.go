@@ -31,9 +31,8 @@ type Secret struct {
 	Token string
 }
 
-// SpacedIgnore is excluded too; the directive has a space after the marker.
-//
-// standin:ignore
+// SpacedIgnore is NOT excluded: with a space after the comment marker,
+// standin:ignore is prose rather than a directive.
 type SpacedIgnore struct {
 	A int
 }

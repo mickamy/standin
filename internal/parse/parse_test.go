@@ -62,6 +62,9 @@ func TestLoad(t *testing.T) {
 		"Profile": {
 			{name: "Bio", typ: "string"},
 		},
+		"SpacedIgnore": {
+			{name: "A", typ: "int"},
+		},
 		"User": {
 			{name: "ID", typ: "int64"},
 			{name: "Name", typ: "string", tag: `fake:"{firstname}"`},
@@ -71,7 +74,7 @@ func TestLoad(t *testing.T) {
 		},
 	}
 
-	wantNames := []string{"Admin", "NotIgnored", "Profile", "User"}
+	wantNames := []string{"Admin", "NotIgnored", "Profile", "SpacedIgnore", "User"}
 
 	gotNames := make([]string, 0, len(pkg.Structs))
 	for _, s := range pkg.Structs {

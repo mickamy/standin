@@ -127,6 +127,9 @@ type Draft struct {
 }
 ```
 
+The directive follows the Go directive convention: it must be written exactly as `//standin:ignore`, with no space after
+the comment marker. A doc comment that merely mentions `standin:ignore` in prose does not exclude the type.
+
 ---
 
 ## Inference rules
