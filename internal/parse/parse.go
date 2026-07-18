@@ -22,6 +22,9 @@ type Package struct {
 	Name string
 	// Path is the import path.
 	Path string
+	// GoMod is the path to the go.mod file of the module containing the
+	// package; empty when the module is unknown.
+	GoMod string
 	// Structs holds the fixture targets, sorted by name.
 	Structs []Struct
 }
@@ -47,7 +50,7 @@ type Field struct {
 func Load(pattern string) (Package, []string, error) {
 	cfg := &packages.Config{
 		Mode: packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles |
-			packages.NeedImports | packages.NeedTypes | packages.NeedSyntax,
+			packages.NeedImports | packages.NeedTypes | packages.NeedSyntax | packages.NeedModule,
 	}
 
 	pkgs, err := packages.Load(cfg, pattern)
@@ -72,11 +75,16 @@ func Load(pattern string) (Package, []string, error) {
 
 	structs, warnings := extract(pkg)
 
-	return Package{
+	p := Package{
 		Name:    pkg.Name,
 		Path:    pkg.PkgPath,
 		Structs: structs,
-	}, warnings, nil
+	}
+	if pkg.Module != nil {
+		p.GoMod = pkg.Module.GoMod
+	}
+
+	return p, warnings, nil
 }
 
 func extract(pkg *packages.Package) ([]Struct, []string) {

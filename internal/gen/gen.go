@@ -13,8 +13,8 @@ import (
 // directory.
 const FileName = "fixture_gen.go"
 
-// gofakeitImport is the import path of the faker used by generated code.
-const gofakeitImport = "github.com/brianvoe/gofakeit/v7"
+// GofakeitImport is the import path of the faker used by generated code.
+const GofakeitImport = "github.com/brianvoe/gofakeit/v7"
 
 // Params describes one generation run.
 type Params struct {
@@ -56,7 +56,7 @@ func writeImports(buf *bytes.Buffer, p Params) {
 	buf.WriteString("\nimport (\n")
 
 	if needsGofakeit(p.Fixtures) {
-		fmt.Fprintf(buf, "\t%q\n\n", gofakeitImport)
+		fmt.Fprintf(buf, "\t%q\n\n", GofakeitImport)
 	}
 
 	fmt.Fprintf(buf, "\t%q\n)\n", p.SourcePath)

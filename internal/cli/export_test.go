@@ -1,3 +1,3 @@
 package cli
 
-var Parse = parse
+var ParseFlags = parseFlags

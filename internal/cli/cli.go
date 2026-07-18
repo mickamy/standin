@@ -1,13 +1,21 @@
 package cli
 
 import (
+	"bytes"
 	"errors"
 	"flag"
 	"fmt"
+	"go/token"
 	"io"
+	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/mickamy/standin/internal/exit"
+	"github.com/mickamy/standin/internal/gen"
+	"github.com/mickamy/standin/internal/infer"
+	"github.com/mickamy/standin/internal/parse"
 )
 
 // Config holds the options for a single generation run.
@@ -18,8 +26,8 @@ type Config struct {
 	Excludes    []string
 }
 
-func Run(args []string, stdout, stderr io.Writer) int {
-	cfg, err := parse(args, stderr)
+func Run(args []string, _, stderr io.Writer) int {
+	cfg, err := parseFlags(args, stderr)
 	if err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return exit.OK
@@ -28,14 +36,88 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return exit.Usage
 	}
 
-	_ = cfg
-
-	fmt.Fprintln(stderr, "standin: generation is not yet implemented")
-
-	return exit.NotImplemented
+	return generate(cfg, stderr)
 }
 
-func parse(args []string, stderr io.Writer) (Config, error) {
+func generate(cfg Config, stderr io.Writer) int {
+	pkg, warnings, err := parse.Load(cfg.Source)
+	if err != nil {
+		fmt.Fprintf(stderr, "standin: %v\n", err)
+
+		return exit.Error
+	}
+
+	for _, w := range warnings {
+		fmt.Fprintf(stderr, "standin: warning: %s\n", w)
+	}
+
+	pkgName := cfg.Package
+	if pkgName == "" {
+		pkgName = filepath.Base(filepath.Clean(cfg.Destination))
+	}
+
+	if !token.IsIdentifier(pkgName) {
+		fmt.Fprintf(stderr, "standin: invalid package name %q; use -package to override\n", pkgName)
+
+		return exit.Usage
+	}
+
+	structs := slices.DeleteFunc(slices.Clone(pkg.Structs), func(s parse.Struct) bool {
+		return slices.Contains(cfg.Excludes, s.Name)
+	})
+
+	out, err := gen.File(gen.Params{
+		PackageName: pkgName,
+		SourceName:  pkg.Name,
+		SourcePath:  pkg.Path,
+		Fixtures:    infer.Fixtures(structs, pkg.Path),
+	})
+	if err != nil {
+		fmt.Fprintf(stderr, "standin: %v\n", err)
+
+		return exit.Error
+	}
+
+	//nolint:gosec // generated source directories are meant to be world-readable
+	if err := os.MkdirAll(cfg.Destination, 0o755); err != nil {
+		fmt.Fprintf(stderr, "standin: create destination: %v\n", err)
+
+		return exit.Error
+	}
+
+	path := filepath.Join(cfg.Destination, gen.FileName)
+
+	//nolint:gosec // generated source is meant to be world-readable
+	if err := os.WriteFile(path, out, 0o644); err != nil {
+		fmt.Fprintf(stderr, "standin: write %s: %v\n", path, err)
+
+		return exit.Error
+	}
+
+	if needsTidy(out, pkg.GoMod) {
+		fmt.Fprintf(stderr, "standin: note: generated code imports %s; run 'go mod tidy' to add it\n", gen.GofakeitImport)
+	}
+
+	return exit.OK
+}
+
+// needsTidy reports whether the generated code imports gofakeit while the
+// module's go.mod does not mention it yet.
+func needsTidy(out []byte, gomod string) bool {
+	if gomod == "" || !bytes.Contains(out, []byte(gen.GofakeitImport)) {
+		return false
+	}
+
+	//nolint:gosec // the go.mod path comes from the build system metadata
+	content, err := os.ReadFile(gomod)
+	if err != nil {
+		return false
+	}
+
+	return !bytes.Contains(content, []byte(gen.GofakeitImport))
+}
+
+func parseFlags(args []string, stderr io.Writer) (Config, error) {
 	fs := flag.NewFlagSet("standin", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.Usage = func() {
