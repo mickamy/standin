@@ -34,7 +34,7 @@ func User(setters ...func(m *model.User)) model.User {
 		Name:      gofakeit.Name(),
 		Email:     gofakeit.Email(),
 		Age:       gofakeit.Number(18, 65),
-		Code:      gofakeit.Generate("###-####"),
+		Code:      mustGenerate("###-####"),
 		Nick:      gofakeit.Word(),
 		Height:    gofakeit.Float64(),
 		Active:    gofakeit.Bool(),
@@ -45,4 +45,12 @@ func User(setters ...func(m *model.User)) model.User {
 		s(&m)
 	}
 	return m
+}
+
+func mustGenerate(template string) string {
+	s, err := gofakeit.Generate(template)
+	if err != nil {
+		panic(err)
+	}
+	return s
 }

@@ -116,7 +116,9 @@ func tagExpr(tag string, typ types.Type) string {
 	}
 
 	if isString(typ) {
-		return "gofakeit.Generate(" + strconv.Quote(tag) + ")"
+		// mustGenerate is a helper emitted into the generated file; the
+		// two-value gofakeit.Generate cannot be called in a composite literal.
+		return "mustGenerate(" + strconv.Quote(tag) + ")"
 	}
 
 	return ""

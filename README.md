@@ -147,11 +147,14 @@ as the zero value — predictability over coverage.
 |--------------------------------------------|----------------------------|
 | `fake:"skip"`                              | zero value                 |
 | `fake:"{email}"` and other known templates | direct call (tables below) |
-| any other template on a `string` field     | `gofakeit.Generate("...")` |
+| any other template on a `string` field     | `mustGenerate("...")`      |
 | any other template on a non-string field   | zero value                 |
 
+`mustGenerate` is a small helper emitted into the generated file; it wraps the two-value `gofakeit.Generate` and panics
+on invalid templates, so a broken template fails loudly at fixture construction time.
+
 A known template whose field type does not match falls through the same way: `fake:"{date}"` on a `string` field becomes
-`gofakeit.Generate("{date}")`, while `fake:"{email}"` on an `int` field stays zero.
+`mustGenerate("{date}")`, while `fake:"{email}"` on an `int` field stays zero.
 
 Known no-parameter templates, applied when the field type matches:
 

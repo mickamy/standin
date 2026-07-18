@@ -11,6 +11,7 @@ import (
 func Article(setters ...func(m *model.Article)) model.Article {
 	m := model.Article{
 		ID:          gofakeit.Int64(),
+		Slug:        mustGenerate("???-####"),
 		Title:       gofakeit.Word(),
 		Body:        gofakeit.Sentence(10),
 		Author:      User(),
@@ -34,4 +35,12 @@ func User(setters ...func(m *model.User)) model.User {
 		s(&m)
 	}
 	return m
+}
+
+func mustGenerate(template string) string {
+	s, err := gofakeit.Generate(template)
+	if err != nil {
+		panic(err)
+	}
+	return s
 }

@@ -15,6 +15,7 @@ type User struct {
 // Article is a post written by a user.
 type Article struct {
 	ID          int64
+	Slug        string `fake:"???-####"`
 	Title       string
 	Body        string `fake:"{sentence:10}"`
 	Author      User

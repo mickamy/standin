@@ -28,6 +28,18 @@ type Params struct {
 	Fixtures []infer.Fixture
 }
 
+// generateHelper wraps the two-value gofakeit.Generate so template fallbacks
+// can be called inside composite literals.
+const generateHelper = `
+func mustGenerate(template string) string {
+	s, err := gofakeit.Generate(template)
+	if err != nil {
+		panic(err)
+	}
+	return s
+}
+`
+
 // File renders the generated fixture file, formatted with go/format. The
 // output is deterministic: the same params produce byte-identical output.
 func File(p Params) ([]byte, error) {
@@ -42,6 +54,10 @@ func File(p Params) ([]byte, error) {
 
 	for _, fx := range p.Fixtures {
 		writeFixture(&buf, p.SourceName, fx)
+	}
+
+	if usesMustGenerate(p.Fixtures) {
+		buf.WriteString(generateHelper)
 	}
 
 	src, err := format.Source(buf.Bytes())
@@ -65,7 +81,20 @@ func writeImports(buf *bytes.Buffer, p Params) {
 func needsGofakeit(fixtures []infer.Fixture) bool {
 	for _, fx := range fixtures {
 		for _, f := range fx.Fields {
-			if strings.Contains(f.Expr, "gofakeit.") {
+			// mustGenerate calls gofakeit.Generate inside the helper.
+			if strings.Contains(f.Expr, "gofakeit.") || strings.Contains(f.Expr, "mustGenerate(") {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+func usesMustGenerate(fixtures []infer.Fixture) bool {
+	for _, fx := range fixtures {
+		for _, f := range fx.Fields {
+			if strings.Contains(f.Expr, "mustGenerate(") {
 				return true
 			}
 		}
