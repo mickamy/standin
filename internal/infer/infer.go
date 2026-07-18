@@ -178,29 +178,45 @@ func (inf inferrer) tagExpr(tag string, typ types.Type) string {
 	return ""
 }
 
-type argKind int
+type argClass int
 
 const (
-	argInt argKind = iota
-	argUint
-	argFloat
+	classInt argClass = iota
+	classUint
+	classFloat
+)
+
+// argSpec constrains one template argument: it must be a literal of the
+// class representable in the given bit width.
+type argSpec struct {
+	class argClass
+	bits  int
+}
+
+// int and uint arguments are validated at 32 bits so the emitted literals
+// compile on 32-bit platforms too.
+var (
+	intArg     = argSpec{class: classInt, bits: 32}
+	uintArg    = argSpec{class: classUint, bits: 32}
+	float32Arg = argSpec{class: classFloat, bits: 32}
+	float64Arg = argSpec{class: classFloat, bits: 64}
 )
 
 type paramCall struct {
 	fn     string
-	args   []argKind
+	args   []argSpec
 	result types.BasicKind
 }
 
 // paramCalls maps a parameterized template name to a typed call.
 var paramCalls = map[string]paramCall{
-	"number":       {fn: "gofakeit.Number", args: []argKind{argInt, argInt}, result: types.Int},
-	"intrange":     {fn: "gofakeit.IntRange", args: []argKind{argInt, argInt}, result: types.Int},
-	"uintrange":    {fn: "gofakeit.UintRange", args: []argKind{argUint, argUint}, result: types.Uint},
-	"float32range": {fn: "gofakeit.Float32Range", args: []argKind{argFloat, argFloat}, result: types.Float32},
-	"float64range": {fn: "gofakeit.Float64Range", args: []argKind{argFloat, argFloat}, result: types.Float64},
-	"price":        {fn: "gofakeit.Price", args: []argKind{argFloat, argFloat}, result: types.Float64},
-	"sentence":     {fn: "gofakeit.Sentence", args: []argKind{argInt}, result: types.String},
+	"number":       {fn: "gofakeit.Number", args: []argSpec{intArg, intArg}, result: types.Int},
+	"intrange":     {fn: "gofakeit.IntRange", args: []argSpec{intArg, intArg}, result: types.Int},
+	"uintrange":    {fn: "gofakeit.UintRange", args: []argSpec{uintArg, uintArg}, result: types.Uint},
+	"float32range": {fn: "gofakeit.Float32Range", args: []argSpec{float32Arg, float32Arg}, result: types.Float32},
+	"float64range": {fn: "gofakeit.Float64Range", args: []argSpec{float64Arg, float64Arg}, result: types.Float64},
+	"price":        {fn: "gofakeit.Price", args: []argSpec{float64Arg, float64Arg}, result: types.Float64},
+	"sentence":     {fn: "gofakeit.Sentence", args: []argSpec{intArg}, result: types.String},
 }
 
 // paramTagExpr resolves a parameterized template like {number:1,10}. It only
@@ -232,9 +248,27 @@ func (inf inferrer) paramTagExpr(tag string, b *types.Basic, qualifier string) (
 		return "", false
 	}
 
+	// A numeric result also has to fit the field's kind, so that the
+	// conversion never wraps the declared range into garbage (e.g.,
+	// {intrange:-5,5} on a uint8 field is rejected, not wrapped).
+	fieldSpec, checkField := argSpec{}, false
+
+	if call.result != types.String {
+		fs, ok := numericSpec(b.Kind())
+		if !ok {
+			return "", false
+		}
+
+		fieldSpec, checkField = fs, true
+	}
+
 	for i, arg := range args {
 		arg = strings.TrimSpace(arg)
 		if !validArg(arg, call.args[i]) {
+			return "", false
+		}
+
+		if checkField && !validArg(arg, fieldSpec) {
 			return "", false
 		}
 
@@ -244,24 +278,63 @@ func (inf inferrer) paramTagExpr(tag string, b *types.Basic, qualifier string) (
 	return convert(call.fn+"("+strings.Join(args, ", ")+")", call.result, b, qualifier)
 }
 
-// validArg reports whether s is a Go literal of the expected kind.
-func validArg(s string, kind argKind) bool {
-	switch kind {
-	case argInt:
-		_, err := strconv.ParseInt(s, 10, 64)
+// validArg reports whether s is a literal of the class representable in the
+// spec's bit width.
+func validArg(s string, spec argSpec) bool {
+	switch spec.class {
+	case classInt:
+		_, err := strconv.ParseInt(s, 10, spec.bits)
 
 		return err == nil
-	case argUint:
-		_, err := strconv.ParseUint(s, 10, 64)
+	case classUint:
+		_, err := strconv.ParseUint(s, 10, spec.bits)
 
 		return err == nil
-	case argFloat:
-		f, err := strconv.ParseFloat(s, 64)
+	case classFloat:
+		f, err := strconv.ParseFloat(s, spec.bits)
 
 		// Inf and NaN parse fine but are not valid Go literals.
 		return err == nil && !math.IsInf(f, 0) && !math.IsNaN(f)
 	default:
 		return false
+	}
+}
+
+// numericSpec returns the argument constraint matching a numeric field kind.
+// Platform-sized kinds are constrained to 32 bits so the emitted literals
+// compile everywhere.
+func numericSpec(kind types.BasicKind) (argSpec, bool) {
+	switch kind {
+	case types.Int8:
+		return argSpec{class: classInt, bits: 8}, true
+	case types.Int16:
+		return argSpec{class: classInt, bits: 16}, true
+	case types.Int32:
+		return argSpec{class: classInt, bits: 32}, true
+	case types.Int64:
+		return argSpec{class: classInt, bits: 64}, true
+	case types.Int:
+		return intArg, true
+	case types.Uint8:
+		return argSpec{class: classUint, bits: 8}, true
+	case types.Uint16:
+		return argSpec{class: classUint, bits: 16}, true
+	case types.Uint32:
+		return argSpec{class: classUint, bits: 32}, true
+	case types.Uint64:
+		return argSpec{class: classUint, bits: 64}, true
+	case types.Uint, types.Uintptr:
+		return uintArg, true
+	case types.Float32:
+		return float32Arg, true
+	case types.Float64:
+		return float64Arg, true
+	case types.Invalid, types.Bool, types.String, types.Complex64, types.Complex128, types.UnsafePointer,
+		types.UntypedBool, types.UntypedInt, types.UntypedRune, types.UntypedFloat,
+		types.UntypedComplex, types.UntypedString, types.UntypedNil:
+		return argSpec{}, false
+	default:
+		return argSpec{}, false
 	}
 }
 

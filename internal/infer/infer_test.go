@@ -82,6 +82,27 @@ func TestTagExpr(t *testing.T) {
 			want: "gofakeit.Float32Range(0.5, 2.5)",
 		},
 		{name: "inf float arg", tag: "{price:Inf,10}", typ: types.Typ[types.Float64], want: ""},
+		{name: "negative range on unsigned field", tag: "{intrange:-5,5}", typ: types.Typ[types.Uint8], want: ""},
+		{
+			name: "number fitting a narrow field converts",
+			tag:  "{number:1,10}",
+			typ:  types.Typ[types.Uint8],
+			want: "uint8(gofakeit.Number(1, 10))",
+		},
+		{name: "number overflowing a narrow field", tag: "{number:1,300}", typ: types.Typ[types.Int8], want: ""},
+		{
+			name: "number overflowing 32-bit int stays zero for portability",
+			tag:  "{number:1,3000000000}",
+			typ:  types.Typ[types.Int64],
+			want: "",
+		},
+		{
+			name: "float32range overflowing float32",
+			tag:  "{float32range:1e39,2e39}",
+			typ:  types.Typ[types.Float32],
+			want: "",
+		},
+		{name: "float args on an int field", tag: "{price:1.5,2.5}", typ: types.Typ[types.Int], want: ""},
 		{name: "sentence on string", tag: "{sentence:5}", typ: types.Typ[types.String], want: "gofakeit.Sentence(5)"},
 		{name: "sentence on int does not convert", tag: "{sentence:5}", typ: types.Typ[types.Int], want: ""},
 		{

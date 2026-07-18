@@ -178,6 +178,11 @@ Known parameterized templates, with arguments validated as Go literals:
 When a numeric result differs from the field's kind, standin wraps the call in a conversion: `ID int64` with
 `fake:"{number:1,10}"` becomes `int64(gofakeit.Number(1, 10))`.
 
+Arguments must be representable both by the call's parameter type (`int` and `uint` arguments are checked at 32 bits so
+the emitted literals compile on 32-bit platforms) and by the field's type. A tag that fails either check falls back to
+the zero value instead of wrapping out-of-range values: `fake:"{intrange:-5,5}"` on a `uint8` field is rejected, not
+truncated.
+
 Tags also work on named basic types declared in the source package: `Status Status` with `fake:"{word}"` becomes
 `model.Status(gofakeit.Word())`. Named types from other packages stay zero values.
 
