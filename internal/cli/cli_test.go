@@ -113,9 +113,54 @@ func TestRunGenerate(t *testing.T) {
 		t.Errorf("stderr does not contain the generic warning: %s", stderr.String())
 	}
 
-	// The standin module itself does not depend on gofakeit.
-	if !strings.Contains(stderr.String(), "go mod tidy") {
-		t.Errorf("stderr does not contain the go mod tidy note: %s", stderr.String())
+	// The destination has no enclosing go.mod, so the tidy note stays quiet.
+	if strings.Contains(stderr.String(), "go mod tidy") {
+		t.Errorf("stderr contains an unexpected go mod tidy note: %s", stderr.String())
+	}
+}
+
+func TestRunGenerateTidyNote(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		gomod    string
+		wantNote bool
+	}{
+		{
+			name:     "gofakeit missing from the destination module",
+			gomod:    "module example.com/consumer\n\ngo 1.25\n",
+			wantNote: true,
+		},
+		{
+			name:     "gofakeit already required",
+			gomod:    "module example.com/consumer\n\ngo 1.25\n\nrequire github.com/brianvoe/gofakeit/v7 v7.15.0\n",
+			wantNote: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(tt.gomod), 0o600); err != nil {
+				t.Fatalf("write go.mod: %v", err)
+			}
+
+			dest := filepath.Join(dir, "fixture")
+
+			var stdout, stderr bytes.Buffer
+
+			code := cli.Run([]string{"-source", "./testdata/model", "-destination", dest}, &stdout, &stderr)
+			if code != exit.OK {
+				t.Fatalf("Run() = %d, want %d\nstderr: %s", code, exit.OK, stderr.String())
+			}
+
+			if got := strings.Contains(stderr.String(), "go mod tidy"); got != tt.wantNote {
+				t.Errorf("go mod tidy note printed = %t, want %t\nstderr: %s", got, tt.wantNote, stderr.String())
+			}
+		})
 	}
 }
 

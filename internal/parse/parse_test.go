@@ -3,7 +3,6 @@ package parse_test
 import (
 	"path/filepath"
 	"reflect"
-	"strings"
 	"testing"
 
 	"github.com/mickamy/standin/internal/parse"
@@ -41,10 +40,6 @@ func TestLoad(t *testing.T) {
 
 	if pkg.Path != modelPath {
 		t.Errorf("Path = %q, want %q", pkg.Path, modelPath)
-	}
-
-	if !strings.HasSuffix(pkg.GoMod, "go.mod") {
-		t.Errorf("GoMod = %q, want a go.mod path", pkg.GoMod)
 	}
 
 	wantDir, err := filepath.Abs(filepath.Join("testdata", "model"))

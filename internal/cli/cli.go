@@ -12,6 +12,8 @@ import (
 	"slices"
 	"strings"
 
+	"golang.org/x/mod/modfile"
+
 	"github.com/mickamy/standin/internal/exit"
 	"github.com/mickamy/standin/internal/gen"
 	"github.com/mickamy/standin/internal/infer"
@@ -109,7 +111,7 @@ func generate(cfg Config, stderr io.Writer) int {
 		return exit.Error
 	}
 
-	if needsTidy(out, pkg.GoMod) {
+	if needsTidy(out, absDest) {
 		fmt.Fprintf(stderr, "standin: note: generated code imports %s; run 'go mod tidy' to add it\n", gen.GofakeitImport)
 	}
 
@@ -117,19 +119,53 @@ func generate(cfg Config, stderr io.Writer) int {
 }
 
 // needsTidy reports whether the generated code imports gofakeit while the
-// module's go.mod does not mention it yet.
-func needsTidy(out []byte, gomod string) bool {
-	if gomod == "" || !bytes.Contains(out, []byte(gen.GofakeitImport)) {
+// destination module's go.mod does not require it yet. It is best-effort:
+// an unknown module layout just suppresses the note.
+func needsTidy(out []byte, destDir string) bool {
+	if !bytes.Contains(out, []byte(gen.GofakeitImport)) {
 		return false
 	}
 
-	//nolint:gosec // the go.mod path comes from the build system metadata
-	content, err := os.ReadFile(gomod)
+	gomod := findGoMod(destDir)
+	if gomod == "" {
+		return false
+	}
+
+	//nolint:gosec // the go.mod path is discovered next to the destination
+	data, err := os.ReadFile(gomod)
 	if err != nil {
 		return false
 	}
 
-	return !bytes.Contains(content, []byte(gen.GofakeitImport))
+	f, err := modfile.Parse(gomod, data, nil)
+	if err != nil {
+		return false
+	}
+
+	for _, r := range f.Require {
+		if r.Mod.Path == gen.GofakeitImport {
+			return false
+		}
+	}
+
+	return true
+}
+
+// findGoMod walks up from dir to locate the enclosing go.mod file.
+func findGoMod(dir string) string {
+	for {
+		path := filepath.Join(dir, "go.mod")
+		if _, err := os.Stat(path); err == nil {
+			return path
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return ""
+		}
+
+		dir = parent
+	}
 }
 
 func parseFlags(args []string, stderr io.Writer) (Config, error) {
