@@ -40,6 +40,25 @@ jobs:
       - name: Run tests
         run: go test -race ./...
 
+  example:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Regenerate fixtures and run example tests
+        run: make test-example
+
+      - name: Fail if generated fixtures are out of date
+        run: |
+          if ! git diff --exit-code example/fixture; then
+            echo "::error::example/fixture is out of date — run 'make test-example' and commit the result"
+            exit 1
+          fi
+
   build:
     runs-on: ubuntu-latest
     steps:

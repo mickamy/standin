@@ -1,7 +1,7 @@
 APP_NAME  = standin
 BUILD_DIR = bin
 
-.PHONY: all build install uninstall clean test lint
+.PHONY: all build install uninstall clean test test-example lint
 
 all: build
 
@@ -29,6 +29,9 @@ clean:
 
 test:
 	go test ./... -race
+
+test-example:
+	cd example && go generate ./... && go test ./... -race
 
 lint:
 	@command -v golangci-lint >/dev/null 2>&1 || { \
