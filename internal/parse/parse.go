@@ -22,6 +22,8 @@ type Package struct {
 	Name string
 	// Path is the import path.
 	Path string
+	// Dir is the absolute directory of the package; empty when unknown.
+	Dir string
 	// GoMod is the path to the go.mod file of the module containing the
 	// package; empty when the module is unknown.
 	GoMod string
@@ -78,6 +80,7 @@ func Load(pattern string) (Package, []string, error) {
 	p := Package{
 		Name:    pkg.Name,
 		Path:    pkg.PkgPath,
+		Dir:     pkg.Dir,
 		Structs: structs,
 	}
 	if pkg.Module != nil {

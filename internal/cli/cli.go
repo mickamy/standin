@@ -51,6 +51,21 @@ func generate(cfg Config, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "standin: warning: %s\n", w)
 	}
 
+	absDest, err := filepath.Abs(cfg.Destination)
+	if err != nil {
+		fmt.Fprintf(stderr, "standin: resolve destination: %v\n", err)
+
+		return exit.Error
+	}
+
+	// Generating into the source package would make the file import its own
+	// package and break compilation.
+	if pkg.Dir != "" && absDest == pkg.Dir {
+		fmt.Fprintln(stderr, "standin: -destination must be a different package from -source")
+
+		return exit.Usage
+	}
+
 	pkgName := cfg.Package
 	if pkgName == "" {
 		pkgName = filepath.Base(filepath.Clean(cfg.Destination))

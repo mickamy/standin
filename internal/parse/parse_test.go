@@ -1,6 +1,7 @@
 package parse_test
 
 import (
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -44,6 +45,15 @@ func TestLoad(t *testing.T) {
 
 	if !strings.HasSuffix(pkg.GoMod, "go.mod") {
 		t.Errorf("GoMod = %q, want a go.mod path", pkg.GoMod)
+	}
+
+	wantDir, err := filepath.Abs(filepath.Join("testdata", "model"))
+	if err != nil {
+		t.Fatalf("filepath.Abs() error = %v", err)
+	}
+
+	if pkg.Dir != wantDir {
+		t.Errorf("Dir = %q, want %q", pkg.Dir, wantDir)
 	}
 
 	wantWarnings := []string{"skipping generic struct Pair"}

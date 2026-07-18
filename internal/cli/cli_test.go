@@ -155,6 +155,25 @@ func TestRunGeneratePackageOverride(t *testing.T) {
 	}
 }
 
+func TestRunGenerateSameDirAsSource(t *testing.T) {
+	t.Parallel()
+
+	var stdout, stderr bytes.Buffer
+
+	code := cli.Run([]string{"-source", "./testdata/model", "-destination", "./testdata/model"}, &stdout, &stderr)
+	if code != exit.Usage {
+		t.Fatalf("Run() = %d, want %d\nstderr: %s", code, exit.Usage, stderr.String())
+	}
+
+	if !strings.Contains(stderr.String(), "different package") {
+		t.Errorf("stderr does not explain the conflict: %s", stderr.String())
+	}
+
+	if _, err := os.Stat("testdata/model/fixture_gen.go"); !os.IsNotExist(err) {
+		t.Error("fixture_gen.go was written into the source package")
+	}
+}
+
 func TestRunGenerateInvalidPackageName(t *testing.T) {
 	t.Parallel()
 
