@@ -38,6 +38,7 @@ func TestTagExpr(t *testing.T) {
 		want string
 	}{
 		{name: "skip", tag: "skip", typ: types.Typ[types.String], want: ""},
+		{name: "dash skip", tag: "-", typ: types.Typ[types.String], want: ""},
 		{name: "empty", tag: "", typ: types.Typ[types.String], want: ""},
 		{name: "known template", tag: "{email}", typ: types.Typ[types.String], want: "gofakeit.Email()"},
 		{name: "known template type mismatch", tag: "{email}", typ: types.Typ[types.Int], want: ""},
@@ -246,6 +247,7 @@ func TestFixtures(t *testing.T) {
 		{Name: "User", Fields: []parse.Field{
 			{Name: "ID", Type: types.Typ[types.Int64]},
 			{Name: "Name", Type: types.Typ[types.String], Tag: `fake:"{firstname}"`},
+			{Name: "Memo", Type: types.Typ[types.String], Tag: `fake:""`},
 			{Name: "CreatedAt", Type: timeTime},
 			{Name: "Profile", Type: profile},
 			{Name: "Ex", Type: excluded},
@@ -265,6 +267,7 @@ func TestFixtures(t *testing.T) {
 		{Name: "User", Fields: []infer.FieldValue{
 			{Name: "ID", Expr: "gofakeit.Int64()"},
 			{Name: "Name", Expr: "gofakeit.FirstName()"},
+			{Name: "Memo", Expr: "gofakeit.Word()"},
 			{Name: "CreatedAt", Expr: "gofakeit.Date()"},
 			{Name: "Profile", Expr: "Profile()"},
 		}},

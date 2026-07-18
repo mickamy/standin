@@ -143,12 +143,13 @@ as the zero value — predictability over coverage.
 
 ### 1. Tags
 
-| Tag                                        | Result                     |
-|--------------------------------------------|----------------------------|
-| `fake:"skip"`                              | zero value                 |
-| `fake:"{email}"` and other known templates | direct call (tables below) |
-| any other template on a `string` field     | `mustGenerate("...")`      |
-| any other template on a non-string field   | zero value                 |
+| Tag                                        | Result                              |
+|--------------------------------------------|-------------------------------------|
+| `fake:"skip"` / `fake:"-"`                 | zero value                          |
+| `fake:""`                                  | ignored — normal inference applies  |
+| `fake:"{email}"` and other known templates | direct call (tables below)          |
+| any other template on a `string` field     | `mustGenerate("...")`               |
+| any other template on a non-string field   | zero value                          |
 
 `mustGenerate` is a small helper emitted into the generated file; it wraps the two-value `gofakeit.Generate` and panics
 on invalid templates, so a broken template fails loudly at fixture construction time.

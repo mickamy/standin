@@ -71,7 +71,9 @@ func Fixtures(structs []parse.Struct, pkgPath, pkgName string) []Fixture {
 func (inf inferrer) fieldExpr(f parse.Field, owner string) string {
 	typ := types.Unalias(f.Type)
 
-	if tag, ok := f.Tag.Lookup("fake"); ok {
+	// An empty fake tag is not a directive; gofakeit generates such fields
+	// normally, so fall through to the name and type rules.
+	if tag, ok := f.Tag.Lookup("fake"); ok && tag != "" {
 		return inf.tagExpr(tag, typ)
 	}
 
@@ -148,7 +150,8 @@ var stringTagCalls = map[string]string{
 // Named basic types from the source package are supported through a
 // conversion, e.g. model.Status(gofakeit.Word()).
 func (inf inferrer) tagExpr(tag string, typ types.Type) string {
-	if tag == "" || tag == "skip" {
+	// gofakeit treats both "skip" and "-" as skip markers.
+	if tag == "" || tag == "skip" || tag == "-" {
 		return ""
 	}
 
