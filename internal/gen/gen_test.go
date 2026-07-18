@@ -30,7 +30,7 @@ func TestFileGolden(t *testing.T) {
 		PackageName: "fixture",
 		SourceName:  pkg.Name,
 		SourcePath:  pkg.Path,
-		Fixtures:    infer.Fixtures(pkg.Structs, pkg.Path),
+		Fixtures:    infer.Fixtures(pkg.Structs, pkg.Path, pkg.Name),
 	})
 	if err != nil {
 		t.Fatalf("File() error = %v", err)

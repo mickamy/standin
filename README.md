@@ -178,6 +178,9 @@ Known parameterized templates, with arguments validated as Go literals:
 When a numeric result differs from the field's kind, standin wraps the call in a conversion: `ID int64` with
 `fake:"{number:1,10}"` becomes `int64(gofakeit.Number(1, 10))`.
 
+Tags also work on named basic types declared in the source package: `Status Status` with `fake:"{word}"` becomes
+`model.Status(gofakeit.Word())`. Named types from other packages stay zero values.
+
 ### 2. Field names
 
 Applied only when the field type matches the call's result type.
@@ -215,7 +218,7 @@ The following stay at their zero value, on purpose:
 
 - **Pointers** — `nil` respects nullable semantics; set one with a setter when a test needs it.
 - **Slices, maps, interfaces, channels, funcs** — `nil`.
-- **Named basic types** (e.g., `type Status string`) — standin cannot know the valid values; use a `fake` tag.
+- **Named basic types** (e.g., `type Status string`) — standin cannot know the valid values; add a `fake` tag to opt in (see the tag section above).
 - **Structs from other packages** (except `time.Time`).
 - **Unexported fields** — not settable from the fixture package.
 

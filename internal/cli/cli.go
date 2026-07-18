@@ -70,7 +70,7 @@ func generate(cfg Config, stderr io.Writer) int {
 		PackageName: pkgName,
 		SourceName:  pkg.Name,
 		SourcePath:  pkg.Path,
-		Fixtures:    infer.Fixtures(structs, pkg.Path),
+		Fixtures:    infer.Fixtures(structs, pkg.Path, pkg.Name),
 	})
 	if err != nil {
 		fmt.Fprintf(stderr, "standin: %v\n", err)

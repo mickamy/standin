@@ -85,9 +85,27 @@ func TestTagExpr(t *testing.T) {
 		{name: "sentence on string", tag: "{sentence:5}", typ: types.Typ[types.String], want: "gofakeit.Sentence(5)"},
 		{name: "sentence on int does not convert", tag: "{sentence:5}", typ: types.Typ[types.Int], want: ""},
 		{
-			name: "number on named int",
+			name: "number on named int converts through the named type",
 			tag:  "{number:1,10}",
 			typ:  namedBasic(modelPkg, "Level", types.Typ[types.Int]),
+			want: "model.Level(gofakeit.Number(1, 10))",
+		},
+		{
+			name: "word on named string converts through the named type",
+			tag:  "{word}",
+			typ:  namedBasic(modelPkg, "Status", types.Typ[types.String]),
+			want: "model.Status(gofakeit.Word())",
+		},
+		{
+			name: "unknown template on named string converts the fallback",
+			tag:  "###",
+			typ:  namedBasic(modelPkg, "Code", types.Typ[types.String]),
+			want: `model.Code(mustGenerate("###"))`,
+		},
+		{
+			name: "named string from another package stays zero",
+			tag:  "{word}",
+			typ:  namedBasic(types.NewPackage("example.com/other", "other"), "Status", types.Typ[types.String]),
 			want: "",
 		},
 	}
@@ -96,7 +114,7 @@ func TestTagExpr(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			if got := infer.TagExpr(tt.tag, tt.typ); got != tt.want {
+			if got := infer.TagExpr(tt.tag, tt.typ, pkgPath, "model"); got != tt.want {
 				t.Errorf("tagExpr(%q) = %q, want %q", tt.tag, got, tt.want)
 			}
 		})
@@ -231,7 +249,7 @@ func TestFixtures(t *testing.T) {
 		}},
 	}
 
-	got := infer.Fixtures(structs, pkgPath)
+	got := infer.Fixtures(structs, pkgPath, "model")
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("Fixtures() = %+v, want %+v", got, want)
 	}

@@ -12,12 +12,16 @@ type User struct {
 	CreatedAt time.Time
 }
 
+// Status is the publication status of an article.
+type Status string
+
 // Article is a post written by a user.
 type Article struct {
 	ID          int64
 	Slug        string `fake:"???-####"`
 	Title       string
 	Body        string `fake:"{sentence:10}"`
+	Status      Status `fake:"{word}"`
 	Author      User
 	Tags        []string
 	PublishedAt time.Time

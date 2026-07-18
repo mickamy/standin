@@ -38,6 +38,8 @@ func User(setters ...func(m *model.User)) model.User {
 		Nick:      gofakeit.Word(),
 		Height:    gofakeit.Float64(),
 		Active:    gofakeit.Bool(),
+		Kind:      model.Status(gofakeit.Word()),
+		Level:     model.Level(gofakeit.Number(1, 5)),
 		CreatedAt: gofakeit.Date(),
 		Profile:   Profile(),
 	}

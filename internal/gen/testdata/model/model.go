@@ -5,8 +5,12 @@ import "time"
 // Nickname is an alias; fields of this type infer as the aliased type.
 type Nickname = string
 
-// Status is a named basic type; fields of this type stay zero values.
+// Status is a named basic type; untagged fields of this type stay zero
+// values, tagged ones convert through the named type.
 type Status string
+
+// Level is a named basic type exercised through a parameterized tag.
+type Level int
 
 // User exercises tags, heuristics, type-based rules, and references.
 type User struct {
@@ -22,6 +26,8 @@ type User struct {
 	Note      *string
 	Tags      []string
 	Status    Status
+	Kind      Status `fake:"{word}"`
+	Level     Level  `fake:"{number:1,5}"`
 	CreatedAt time.Time
 	Profile   Profile
 	secret    string

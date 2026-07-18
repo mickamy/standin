@@ -14,6 +14,7 @@ func Article(setters ...func(m *model.Article)) model.Article {
 		Slug:        mustGenerate("???-####"),
 		Title:       gofakeit.Word(),
 		Body:        gofakeit.Sentence(10),
+		Status:      model.Status(gofakeit.Word()),
 		Author:      User(),
 		PublishedAt: gofakeit.Date(),
 	}

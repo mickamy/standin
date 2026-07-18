@@ -22,16 +22,28 @@ type Fixture struct {
 	Fields []FieldValue
 }
 
-// Fixtures computes the field expressions for each struct. structs must
-// already be filtered down to the set that gets a fixture function;
-// references to types outside that set fall back to zero values.
-func Fixtures(structs []parse.Struct, pkgPath string) []Fixture {
+// inferrer carries the source package identity needed to resolve
+// same-package references and named-type conversions.
+type inferrer struct {
+	pkgPath string
+	pkgName string
+	targets map[string]bool
+	graph   map[string][]string
+}
+
+// Fixtures computes the field expressions for each struct. pkgPath and
+// pkgName identify the source package, whose name qualifies the emitted
+// types. structs must already be filtered down to the set that gets a
+// fixture function; references to types outside that set fall back to zero
+// values.
+func Fixtures(structs []parse.Struct, pkgPath, pkgName string) []Fixture {
 	targets := make(map[string]bool, len(structs))
 	for _, s := range structs {
 		targets[s.Name] = true
 	}
 
-	graph := referenceGraph(structs, pkgPath, targets)
+	inf := inferrer{pkgPath: pkgPath, pkgName: pkgName, targets: targets}
+	inf.graph = inf.referenceGraph(structs)
 
 	fixtures := make([]Fixture, 0, len(structs))
 
@@ -39,7 +51,7 @@ func Fixtures(structs []parse.Struct, pkgPath string) []Fixture {
 		fx := Fixture{Name: s.Name}
 
 		for _, f := range s.Fields {
-			expr := fieldExpr(f, pkgPath, targets, graph, s.Name)
+			expr := inf.fieldExpr(f, s.Name)
 			if expr == "" {
 				continue
 			}
@@ -56,19 +68,19 @@ func Fixtures(structs []parse.Struct, pkgPath string) []Fixture {
 // fieldExpr returns the Go expression assigned to the field, applying the
 // inference rules in priority order. An empty string means the field is
 // omitted from the literal (zero value).
-func fieldExpr(f parse.Field, pkgPath string, targets map[string]bool, graph map[string][]string, owner string) string {
+func (inf inferrer) fieldExpr(f parse.Field, owner string) string {
 	typ := types.Unalias(f.Type)
 
 	if tag, ok := f.Tag.Lookup("fake"); ok {
-		return tagExpr(tag, typ)
+		return inf.tagExpr(tag, typ)
 	}
 
 	if expr, ok := nameExpr(f.Name, typ); ok {
 		return expr
 	}
 
-	if name, ok := fixtureRef(typ, pkgPath, targets); ok {
-		if reaches(graph, name, owner) {
+	if name, ok := inf.fixtureRef(typ); ok {
+		if reaches(inf.graph, name, owner) {
 			// Calling the fixture would recurse forever; fall back to the
 			// zero value.
 			return ""
@@ -80,45 +92,87 @@ func fieldExpr(f parse.Field, pkgPath string, targets map[string]bool, graph map
 	return typeExpr(typ)
 }
 
-type tagCall struct {
-	expr    string
-	matches func(types.Type) bool
+// basicOf resolves typ to its basic type. For a named basic type declared in
+// the source package (e.g., type Status string) it also returns the
+// qualified name used to convert the emitted expression; named basic types
+// from other packages are not resolvable.
+func (inf inferrer) basicOf(typ types.Type) (*types.Basic, string, bool) {
+	if b, ok := typ.(*types.Basic); ok {
+		return b, "", true
+	}
+
+	named, ok := typ.(*types.Named)
+	if !ok {
+		return nil, "", false
+	}
+
+	b, ok := named.Underlying().(*types.Basic)
+	if !ok {
+		return nil, "", false
+	}
+
+	obj := named.Obj()
+	if obj.Pkg() == nil || obj.Pkg().Path() != inf.pkgPath {
+		return nil, "", false
+	}
+
+	return b, inf.pkgName + "." + obj.Name(), true
 }
 
-// tagCalls maps a known gofakeit tag template to a typed call.
-var tagCalls = map[string]tagCall{
-	"{email}":     {expr: "gofakeit.Email()", matches: isString},
-	"{firstname}": {expr: "gofakeit.FirstName()", matches: isString},
-	"{lastname}":  {expr: "gofakeit.LastName()", matches: isString},
-	"{name}":      {expr: "gofakeit.Name()", matches: isString},
-	"{phone}":     {expr: "gofakeit.Phone()", matches: isString},
-	"{url}":       {expr: "gofakeit.URL()", matches: isString},
-	"{uuid}":      {expr: "gofakeit.UUID()", matches: isString},
-	"{word}":      {expr: "gofakeit.Word()", matches: isString},
-	"{city}":      {expr: "gofakeit.City()", matches: isString},
-	"{country}":   {expr: "gofakeit.Country()", matches: isString},
-	"{date}":      {expr: "gofakeit.Date()", matches: isTime},
+// qualify wraps expr in a conversion to the named type when qualifier is
+// non-empty.
+func qualify(expr, qualifier string) string {
+	if qualifier == "" {
+		return expr
+	}
+
+	return qualifier + "(" + expr + ")"
 }
 
-// tagExpr resolves a fake struct tag. Unknown templates fall back to
-// gofakeit.Generate for string fields and to the zero value otherwise.
-func tagExpr(tag string, typ types.Type) string {
+// stringTagCalls maps a known gofakeit tag template to a string-typed call.
+var stringTagCalls = map[string]string{
+	"{email}":     "gofakeit.Email()",
+	"{firstname}": "gofakeit.FirstName()",
+	"{lastname}":  "gofakeit.LastName()",
+	"{name}":      "gofakeit.Name()",
+	"{phone}":     "gofakeit.Phone()",
+	"{url}":       "gofakeit.URL()",
+	"{uuid}":      "gofakeit.UUID()",
+	"{word}":      "gofakeit.Word()",
+	"{city}":      "gofakeit.City()",
+	"{country}":   "gofakeit.Country()",
+}
+
+// tagExpr resolves a fake struct tag. Unknown templates fall back to the
+// mustGenerate helper for string fields and to the zero value otherwise.
+// Named basic types from the source package are supported through a
+// conversion, e.g. model.Status(gofakeit.Word()).
+func (inf inferrer) tagExpr(tag string, typ types.Type) string {
 	if tag == "" || tag == "skip" {
 		return ""
 	}
 
-	if call, ok := tagCalls[tag]; ok && call.matches(typ) {
-		return call.expr
+	if tag == "{date}" && isTime(typ) {
+		return "gofakeit.Date()"
 	}
 
-	if expr, ok := paramTagExpr(tag, typ); ok {
+	b, qualifier, ok := inf.basicOf(typ)
+	if !ok {
+		return ""
+	}
+
+	if expr, ok := stringTagCalls[tag]; ok && b.Kind() == types.String {
+		return qualify(expr, qualifier)
+	}
+
+	if expr, ok := inf.paramTagExpr(tag, b, qualifier); ok {
 		return expr
 	}
 
-	if isString(typ) {
+	if b.Kind() == types.String {
 		// mustGenerate is a helper emitted into the generated file; the
 		// two-value gofakeit.Generate cannot be called in a composite literal.
-		return "mustGenerate(" + strconv.Quote(tag) + ")"
+		return qualify("mustGenerate("+strconv.Quote(tag)+")", qualifier)
 	}
 
 	return ""
@@ -152,7 +206,7 @@ var paramCalls = map[string]paramCall{
 // paramTagExpr resolves a parameterized template like {number:1,10}. It only
 // matches the calls in paramCalls, and only when every argument validates as
 // a literal of the expected kind, so the emitted code always compiles.
-func paramTagExpr(tag string, typ types.Type) (string, bool) {
+func (inf inferrer) paramTagExpr(tag string, b *types.Basic, qualifier string) (string, bool) {
 	body, ok := strings.CutPrefix(tag, "{")
 	if !ok {
 		return "", false
@@ -187,7 +241,7 @@ func paramTagExpr(tag string, typ types.Type) (string, bool) {
 		args[i] = arg
 	}
 
-	return convert(call.fn+"("+strings.Join(args, ", ")+")", call.result, typ)
+	return convert(call.fn+"("+strings.Join(args, ", ")+")", call.result, b, qualifier)
 }
 
 // validArg reports whether s is a Go literal of the expected kind.
@@ -211,24 +265,33 @@ func validArg(s string, kind argKind) bool {
 	}
 }
 
-// convert adapts a call returning `result` to the field type. Numeric results
-// are wrapped in a conversion when the field is a different numeric kind;
-// string results never convert (string(int) is a rune conversion).
-func convert(expr string, result types.BasicKind, typ types.Type) (string, bool) {
-	b, ok := typ.(*types.Basic)
-	if !ok {
+// convert adapts a call returning `result` to the field's basic type.
+// Numeric results are wrapped in a conversion when the field is a different
+// numeric kind; a named-type qualifier subsumes the numeric conversion.
+// String results never convert across kinds (string(int) is a rune
+// conversion).
+func convert(expr string, result types.BasicKind, b *types.Basic, qualifier string) (string, bool) {
+	if result == types.String {
+		if b.Kind() != types.String {
+			return "", false
+		}
+
+		return qualify(expr, qualifier), true
+	}
+
+	if b.Info()&(types.IsInteger|types.IsFloat) == 0 {
 		return "", false
+	}
+
+	if qualifier != "" {
+		return qualify(expr, qualifier), true
 	}
 
 	if b.Kind() == result {
 		return expr, true
 	}
 
-	if result != types.String && b.Info()&(types.IsInteger|types.IsFloat) != 0 {
-		return b.Name() + "(" + expr + ")", true
-	}
-
-	return "", false
+	return b.Name() + "(" + expr + ")", true
 }
 
 // nameCalls maps a field name to a gofakeit call for string fields.
@@ -311,12 +374,12 @@ func typeExpr(typ types.Type) string {
 
 // referenceGraph collects, per struct, the same-package fixture targets it
 // references as value fields.
-func referenceGraph(structs []parse.Struct, pkgPath string, targets map[string]bool) map[string][]string {
+func (inf inferrer) referenceGraph(structs []parse.Struct) map[string][]string {
 	g := make(map[string][]string)
 
 	for _, s := range structs {
 		for _, f := range s.Fields {
-			if name, ok := fixtureRef(types.Unalias(f.Type), pkgPath, targets); ok {
+			if name, ok := inf.fixtureRef(types.Unalias(f.Type)); ok {
 				g[s.Name] = append(g[s.Name], name)
 			}
 		}
@@ -327,14 +390,14 @@ func referenceGraph(structs []parse.Struct, pkgPath string, targets map[string]b
 
 // fixtureRef reports the fixture target referenced by t as a value field of a
 // same-package named struct.
-func fixtureRef(t types.Type, pkgPath string, targets map[string]bool) (string, bool) {
+func (inf inferrer) fixtureRef(t types.Type) (string, bool) {
 	named, ok := t.(*types.Named)
 	if !ok {
 		return "", false
 	}
 
 	obj := named.Obj()
-	if obj.Pkg() == nil || obj.Pkg().Path() != pkgPath || !targets[obj.Name()] {
+	if obj.Pkg() == nil || obj.Pkg().Path() != inf.pkgPath || !inf.targets[obj.Name()] {
 		return "", false
 	}
 
