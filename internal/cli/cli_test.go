@@ -182,6 +182,55 @@ func TestRunGenerateExclude(t *testing.T) {
 	}
 }
 
+func TestRunGenerateExcludeUnknownName(t *testing.T) {
+	t.Parallel()
+
+	dest := filepath.Join(t.TempDir(), "fixture")
+
+	var stdout, stderr bytes.Buffer
+
+	code := cli.Run([]string{"-source", "./testdata/model", "-destination", dest, "-exclude", "Profil"}, &stdout, &stderr)
+	if code != exit.OK {
+		t.Fatalf("Run() = %d, want %d\nstderr: %s", code, exit.OK, stderr.String())
+	}
+
+	if !strings.Contains(stderr.String(), "-exclude Profil matches no struct") {
+		t.Errorf("stderr does not warn about the unknown exclude: %s", stderr.String())
+	}
+}
+
+func TestRunGenerateExcludeEverything(t *testing.T) {
+	t.Parallel()
+
+	dest := filepath.Join(t.TempDir(), "fixture")
+	if err := os.MkdirAll(dest, 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	existing := filepath.Join(dest, "fixture_gen.go")
+	if err := os.WriteFile(existing, []byte("package fixture // precious\n"), 0o600); err != nil {
+		t.Fatalf("write existing file: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+
+	args := []string{"-source", "./testdata/model", "-destination", dest, "-exclude", "User,Post"}
+
+	code := cli.Run(args, &stdout, &stderr)
+	if code != exit.Error {
+		t.Fatalf("Run() = %d, want %d\nstderr: %s", code, exit.Error, stderr.String())
+	}
+
+	if !strings.Contains(stderr.String(), "no fixture targets") {
+		t.Errorf("stderr does not explain the empty result: %s", stderr.String())
+	}
+
+	got := readGenerated(t, dest)
+	if got != "package fixture // precious\n" {
+		t.Errorf("existing file was overwritten:\n%s", got)
+	}
+}
+
 func TestRunGeneratePackageOverride(t *testing.T) {
 	t.Parallel()
 

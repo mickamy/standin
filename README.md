@@ -115,6 +115,9 @@ standin -source <pkg> -destination <dir> [flags]
 | `--version`, `-v`    | Print version.                                                    |
 | `--help`, `-h`       | Show help.                                                        |
 
+An `-exclude` name that matches no struct produces a warning, and excluding every struct is an error — the existing
+generated file is left untouched.
+
 Every exported struct in the source package gets a fixture, so adding a model never requires touching the directive. To
 opt a struct out, use `-exclude` or a doc-comment directive:
 

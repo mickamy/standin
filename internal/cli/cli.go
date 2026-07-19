@@ -79,9 +79,26 @@ func generate(cfg Config, stderr io.Writer) int {
 		return exit.Usage
 	}
 
+	names := make(map[string]bool, len(pkg.Structs))
+	for _, s := range pkg.Structs {
+		names[s.Name] = true
+	}
+
+	for _, ex := range cfg.Excludes {
+		if !names[ex] {
+			fmt.Fprintf(stderr, "standin: warning: -exclude %s matches no struct in %s\n", ex, pkg.Path)
+		}
+	}
+
 	structs := slices.DeleteFunc(slices.Clone(pkg.Structs), func(s parse.Struct) bool {
 		return slices.Contains(cfg.Excludes, s.Name)
 	})
+
+	if len(structs) == 0 {
+		fmt.Fprintf(stderr, "standin: no fixture targets found in %s\n", pkg.Path)
+
+		return exit.Error
+	}
 
 	out, err := gen.File(gen.Params{
 		PackageName: pkgName,
