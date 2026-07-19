@@ -54,7 +54,8 @@ jobs:
 
       - name: Fail if generated fixtures are out of date
         run: |
-          if ! git diff --exit-code example/fixture; then
+          if [ -n "$(git status --porcelain example/fixture)" ]; then
+            git status --porcelain example/fixture
             echo "::error::example/fixture is out of date — run 'make test-example' and commit the result"
             exit 1
           fi
