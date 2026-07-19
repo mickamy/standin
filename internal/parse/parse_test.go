@@ -11,18 +11,16 @@ import (
 const modelPath = "github.com/mickamy/standin/internal/parse/testdata/model"
 
 type fieldView struct {
-	name     string
-	typ      string
-	tag      reflect.StructTag
-	embedded bool
+	name string
+	typ  string
+	tag  reflect.StructTag
 }
 
 func viewOf(f parse.Field) fieldView {
 	return fieldView{
-		name:     f.Name,
-		typ:      f.Type.String(),
-		tag:      f.Tag,
-		embedded: f.Embedded,
+		name: f.Name,
+		typ:  f.Type.String(),
+		tag:  f.Tag,
 	}
 }
 
@@ -58,7 +56,7 @@ func TestLoad(t *testing.T) {
 
 	wantStructs := map[string][]fieldView{
 		"Admin": {
-			{name: "Profile", typ: modelPath + ".Profile", embedded: true},
+			{name: "Profile", typ: modelPath + ".Profile"},
 			{name: "Level", typ: "int"},
 		},
 		"NotIgnored": {

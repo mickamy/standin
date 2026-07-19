@@ -35,12 +35,12 @@ type Struct struct {
 	Fields []Field
 }
 
-// Field is a settable field of a fixture target.
+// Field is a settable field of a fixture target. Embedded fields appear as
+// regular fields named after their type.
 type Field struct {
-	Name     string
-	Type     types.Type
-	Tag      reflect.StructTag
-	Embedded bool
+	Name string
+	Type types.Type
+	Tag  reflect.StructTag
 }
 
 // Load loads the package identified by pattern (a relative path or an import
@@ -132,10 +132,9 @@ func structOf(name string, st *types.Struct) Struct {
 		}
 
 		s.Fields = append(s.Fields, Field{
-			Name:     f.Name(),
-			Type:     f.Type(),
-			Tag:      reflect.StructTag(st.Tag(i)),
-			Embedded: f.Embedded(),
+			Name: f.Name(),
+			Type: f.Type(),
+			Tag:  reflect.StructTag(st.Tag(i)),
 		})
 	}
 
