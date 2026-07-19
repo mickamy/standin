@@ -113,7 +113,7 @@ func TestLoadErrors(t *testing.T) {
 		},
 		{
 			name:    "multiple packages",
-			pattern: "../...",
+			pattern: "./testdata/multi/...",
 		},
 	}
 
