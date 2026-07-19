@@ -72,6 +72,12 @@ func Load(pattern string) (Package, []string, error) {
 		return Package{}, nil, fmt.Errorf("load package %s: %s", pattern, strings.Join(msgs, "; "))
 	}
 
+	// Guard against loader results that carry no type information even
+	// though no errors were reported.
+	if pkg.Types == nil {
+		return Package{}, nil, fmt.Errorf("load package %s: no type information", pattern)
+	}
+
 	structs, warnings := extract(pkg)
 
 	return Package{
