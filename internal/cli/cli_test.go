@@ -63,7 +63,7 @@ func TestRun(t *testing.T) {
 
 			var stdout, stderr bytes.Buffer
 
-			got := cli.Run(tt.args, &stdout, &stderr)
+			got := cli.Run(tt.args, "dev", &stdout, &stderr)
 			if got != tt.want {
 				t.Errorf("Run() = %d, want %d\nstderr: %s", got, tt.want, stderr.String())
 			}
@@ -84,6 +84,39 @@ func readGenerated(t *testing.T, dest string) string {
 	return string(out)
 }
 
+func TestRunVersion(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "version as the only flag", args: []string{"--version"}},
+		{name: "shorthand", args: []string{"-v"}},
+		{
+			name: "version after other flags",
+			args: []string{"-source", "./testdata/model", "-destination", "./x", "--version"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var stdout, stderr bytes.Buffer
+
+			code := cli.Run(tt.args, "1.2.3", &stdout, &stderr)
+			if code != exit.OK {
+				t.Fatalf("Run() = %d, want %d\nstderr: %s", code, exit.OK, stderr.String())
+			}
+
+			if got := stdout.String(); got != "standin 1.2.3\n" {
+				t.Errorf("stdout = %q, want %q", got, "standin 1.2.3\n")
+			}
+		})
+	}
+}
+
 func TestRunGenerate(t *testing.T) {
 	t.Parallel()
 
@@ -91,7 +124,7 @@ func TestRunGenerate(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 
-	code := cli.Run([]string{"-source", "./testdata/model", "-destination", dest}, &stdout, &stderr)
+	code := cli.Run([]string{"-source", "./testdata/model", "-destination", dest}, "dev", &stdout, &stderr)
 	if code != exit.OK {
 		t.Fatalf("Run() = %d, want %d\nstderr: %s", code, exit.OK, stderr.String())
 	}
@@ -152,7 +185,7 @@ func TestRunGenerateTidyNote(t *testing.T) {
 
 			var stdout, stderr bytes.Buffer
 
-			code := cli.Run([]string{"-source", "./testdata/model", "-destination", dest}, &stdout, &stderr)
+			code := cli.Run([]string{"-source", "./testdata/model", "-destination", dest}, "dev", &stdout, &stderr)
 			if code != exit.OK {
 				t.Fatalf("Run() = %d, want %d\nstderr: %s", code, exit.OK, stderr.String())
 			}
@@ -171,7 +204,9 @@ func TestRunGenerateExclude(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 
-	code := cli.Run([]string{"-source", "./testdata/model", "-destination", dest, "-exclude", "Post"}, &stdout, &stderr)
+	args := []string{"-source", "./testdata/model", "-destination", dest, "-exclude", "Post"}
+
+	code := cli.Run(args, "dev", &stdout, &stderr)
 	if code != exit.OK {
 		t.Fatalf("Run() = %d, want %d\nstderr: %s", code, exit.OK, stderr.String())
 	}
@@ -189,7 +224,9 @@ func TestRunGenerateExcludeUnknownName(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 
-	code := cli.Run([]string{"-source", "./testdata/model", "-destination", dest, "-exclude", "Profil"}, &stdout, &stderr)
+	args := []string{"-source", "./testdata/model", "-destination", dest, "-exclude", "Profil"}
+
+	code := cli.Run(args, "dev", &stdout, &stderr)
 	if code != exit.OK {
 		t.Fatalf("Run() = %d, want %d\nstderr: %s", code, exit.OK, stderr.String())
 	}
@@ -216,7 +253,7 @@ func TestRunGenerateExcludeEverything(t *testing.T) {
 
 	args := []string{"-source", "./testdata/model", "-destination", dest, "-exclude", "User,Post"}
 
-	code := cli.Run(args, &stdout, &stderr)
+	code := cli.Run(args, "dev", &stdout, &stderr)
 	if code != exit.Error {
 		t.Fatalf("Run() = %d, want %d\nstderr: %s", code, exit.Error, stderr.String())
 	}
@@ -238,7 +275,9 @@ func TestRunGeneratePackageOverride(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 
-	code := cli.Run([]string{"-source", "./testdata/model", "-destination", dest, "-package", "fx"}, &stdout, &stderr)
+	args := []string{"-source", "./testdata/model", "-destination", dest, "-package", "fx"}
+
+	code := cli.Run(args, "dev", &stdout, &stderr)
 	if code != exit.OK {
 		t.Fatalf("Run() = %d, want %d\nstderr: %s", code, exit.OK, stderr.String())
 	}
@@ -254,7 +293,7 @@ func TestRunGenerateSameDirAsSource(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 
-	code := cli.Run([]string{"-source", "./testdata/model", "-destination", "./testdata/model"}, &stdout, &stderr)
+	code := cli.Run([]string{"-source", "./testdata/model", "-destination", "./testdata/model"}, "dev", &stdout, &stderr)
 	if code != exit.Usage {
 		t.Fatalf("Run() = %d, want %d\nstderr: %s", code, exit.Usage, stderr.String())
 	}
@@ -275,7 +314,7 @@ func TestRunGenerateInvalidPackageName(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 
-	code := cli.Run([]string{"-source", "./testdata/model", "-destination", dest}, &stdout, &stderr)
+	code := cli.Run([]string{"-source", "./testdata/model", "-destination", dest}, "dev", &stdout, &stderr)
 	if code != exit.Usage {
 		t.Fatalf("Run() = %d, want %d\nstderr: %s", code, exit.Usage, stderr.String())
 	}

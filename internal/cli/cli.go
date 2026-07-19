@@ -26,9 +26,10 @@ type Config struct {
 	Destination string
 	Package     string
 	Excludes    []string
+	ShowVersion bool
 }
 
-func Run(args []string, _, stderr io.Writer) int {
+func Run(args []string, version string, stdout, stderr io.Writer) int {
 	cfg, err := parseFlags(args, stderr)
 	if err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -36,6 +37,12 @@ func Run(args []string, _, stderr io.Writer) int {
 		}
 
 		return exit.Usage
+	}
+
+	if cfg.ShowVersion {
+		fmt.Fprintf(stdout, "standin %s\n", version)
+
+		return exit.OK
 	}
 
 	return generate(cfg, stderr)
@@ -200,9 +207,15 @@ func parseFlags(args []string, stderr io.Writer) (Config, error) {
 	fs.StringVar(&cfg.Destination, "destination", "", "output directory for the generated file")
 	fs.StringVar(&cfg.Package, "package", "", "generated package name (defaults to the destination directory name)")
 	fs.StringVar(&exclude, "exclude", "", "comma-separated type names to exclude (e.g., -exclude Foo,Bar)")
+	fs.BoolVar(&cfg.ShowVersion, "version", false, "print standin version")
+	fs.BoolVar(&cfg.ShowVersion, "v", false, "print standin version (shorthand)")
 
 	if err := fs.Parse(args); err != nil {
 		return Config{}, fmt.Errorf("parse flags: %w", err)
+	}
+
+	if cfg.ShowVersion {
+		return cfg, nil
 	}
 
 	if fs.NArg() > 0 {
