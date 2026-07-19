@@ -49,6 +49,25 @@ func Run(args []string, version string, stdout, stderr io.Writer) int {
 }
 
 func generate(cfg Config, stderr io.Writer) int {
+	// Validate what we can before the expensive package load.
+	pkgName := cfg.Package
+	if pkgName == "" {
+		pkgName = filepath.Base(filepath.Clean(cfg.Destination))
+	}
+
+	if !token.IsIdentifier(pkgName) {
+		fmt.Fprintf(stderr, "standin: invalid package name %q; use -package to override\n", pkgName)
+
+		return exit.Usage
+	}
+
+	absDest, err := filepath.Abs(cfg.Destination)
+	if err != nil {
+		fmt.Fprintf(stderr, "standin: resolve destination: %v\n", err)
+
+		return exit.Error
+	}
+
 	pkg, warnings, err := parse.Load(cfg.Source)
 	if err != nil {
 		fmt.Fprintf(stderr, "standin: %v\n", err)
@@ -60,28 +79,10 @@ func generate(cfg Config, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "standin: warning: %s\n", w)
 	}
 
-	absDest, err := filepath.Abs(cfg.Destination)
-	if err != nil {
-		fmt.Fprintf(stderr, "standin: resolve destination: %v\n", err)
-
-		return exit.Error
-	}
-
 	// Generating into the source package would make the file import its own
 	// package and break compilation.
 	if pkg.Dir != "" && absDest == pkg.Dir {
 		fmt.Fprintln(stderr, "standin: -destination must be a different package from -source")
-
-		return exit.Usage
-	}
-
-	pkgName := cfg.Package
-	if pkgName == "" {
-		pkgName = filepath.Base(filepath.Clean(cfg.Destination))
-	}
-
-	if !token.IsIdentifier(pkgName) {
-		fmt.Fprintf(stderr, "standin: invalid package name %q; use -package to override\n", pkgName)
 
 		return exit.Usage
 	}
