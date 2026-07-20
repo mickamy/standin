@@ -355,6 +355,21 @@ func TestRunGenerateInvalidPackageName(t *testing.T) {
 	}
 }
 
+func TestFindGoMod(t *testing.T) {
+	t.Parallel()
+
+	// The test runs in internal/cli, so a relative path must still walk up
+	// to the repository's go.mod.
+	got := cli.FindGoMod(".")
+	if !strings.HasSuffix(got, "go.mod") {
+		t.Errorf("findGoMod(%q) = %q, want a go.mod path", ".", got)
+	}
+
+	if cli.FindGoMod(t.TempDir()) != "" {
+		t.Error("findGoMod() found a go.mod outside any module")
+	}
+}
+
 func TestParseFlags(t *testing.T) {
 	t.Parallel()
 

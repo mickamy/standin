@@ -1,3 +1,6 @@
 package cli
 
-var ParseFlags = parseFlags
+var (
+	ParseFlags = parseFlags
+	FindGoMod  = findGoMod
+)

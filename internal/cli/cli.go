@@ -191,6 +191,12 @@ func resolvePath(path string) string {
 
 // findGoMod walks up from dir to locate the enclosing go.mod file.
 func findGoMod(dir string) string {
+	// Normalize so the parent walk reaches the filesystem root even for
+	// relative inputs.
+	if abs, err := filepath.Abs(dir); err == nil {
+		dir = abs
+	}
+
 	for {
 		path := filepath.Join(dir, "go.mod")
 		if _, err := os.Stat(path); err == nil {
