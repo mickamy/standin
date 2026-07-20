@@ -80,8 +80,10 @@ func generate(cfg Config, stderr io.Writer) int {
 	}
 
 	// Generating into the source package would make the file import its own
-	// package and break compilation.
-	if pkg.Dir != "" && absDest == pkg.Dir {
+	// package and break compilation. Compare with symlinks resolved so an
+	// aliased path (e.g., /tmp vs /private/tmp on macOS) cannot bypass the
+	// check.
+	if pkg.Dir != "" && resolvePath(absDest) == resolvePath(pkg.Dir) {
 		fmt.Fprintln(stderr, "standin: -destination must be a different package from -source")
 
 		return exit.Usage
@@ -174,6 +176,17 @@ func needsTidy(out []byte, destDir string) bool {
 	}
 
 	return true
+}
+
+// resolvePath resolves symlinks best-effort, falling back to the input when
+// the path cannot be resolved (e.g., it does not exist yet).
+func resolvePath(path string) string {
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return path
+	}
+
+	return resolved
 }
 
 // findGoMod walks up from dir to locate the enclosing go.mod file.

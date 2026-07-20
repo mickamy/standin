@@ -313,6 +313,31 @@ func TestRunGenerateSameDirAsSource(t *testing.T) {
 	}
 }
 
+func TestRunGenerateSameDirAsSourceViaSymlink(t *testing.T) {
+	t.Parallel()
+
+	src, err := filepath.Abs(filepath.Join("testdata", "model"))
+	if err != nil {
+		t.Fatalf("filepath.Abs() error = %v", err)
+	}
+
+	link := filepath.Join(t.TempDir(), "modellink")
+	if err := os.Symlink(src, link); err != nil {
+		t.Skipf("symlink not supported: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+
+	code := cli.Run([]string{"-source", "./testdata/model", "-destination", link}, "dev", &stdout, &stderr)
+	if code != exit.Usage {
+		t.Fatalf("Run() = %d, want %d\nstderr: %s", code, exit.Usage, stderr.String())
+	}
+
+	if _, err := os.Stat(filepath.Join(src, "fixture_gen.go")); !os.IsNotExist(err) {
+		t.Error("fixture_gen.go was written into the source package through the symlink")
+	}
+}
+
 func TestRunGenerateInvalidPackageName(t *testing.T) {
 	t.Parallel()
 
