@@ -92,7 +92,7 @@ Use it in tests:
 u := fixture.User() // everything fake
 
 alice := fixture.User(func (m *model.User) {
-m.Name = "Alice" // override only what the test cares about
+	m.Name = "Alice" // override only what the test cares about
 })
 ```
 
@@ -126,7 +126,7 @@ opt a struct out, use `-exclude` or a doc-comment directive:
 //
 //standin:ignore
 type Draft struct {
-// ...
+	// ...
 }
 ```
 
@@ -254,8 +254,8 @@ go generate ./... && git diff --exit-code
 
 ```go
 func TestMain(m *testing.M) {
-_ = gofakeit.Seed(1)
-os.Exit(m.Run())
+	_ = gofakeit.Seed(1)
+	os.Exit(m.Run())
 }
 ```
 
