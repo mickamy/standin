@@ -51,6 +51,12 @@ func TestRun(t *testing.T) {
 			want: exit.OK,
 		},
 		{
+			// token.IsIdentifier rejects keywords; lock that in.
+			name: "keyword package name",
+			args: []string{"-source", "./testdata/model", "-destination", "./x", "-package", "func"},
+			want: exit.Usage,
+		},
+		{
 			name: "nonexistent source",
 			args: []string{"-source", "./testdata/nonexistent", "-destination", "./fixture"},
 			want: exit.Error,
