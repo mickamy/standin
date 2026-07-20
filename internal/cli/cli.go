@@ -1,13 +1,23 @@
 package cli
 
 import (
+	"bytes"
 	"errors"
 	"flag"
 	"fmt"
+	"go/token"
 	"io"
+	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 
+	"golang.org/x/mod/modfile"
+
 	"github.com/mickamy/standin/internal/exit"
+	"github.com/mickamy/standin/internal/gen"
+	"github.com/mickamy/standin/internal/infer"
+	"github.com/mickamy/standin/internal/parse"
 )
 
 // Config holds the options for a single generation run.
@@ -16,10 +26,11 @@ type Config struct {
 	Destination string
 	Package     string
 	Excludes    []string
+	ShowVersion bool
 }
 
-func Run(args []string, stdout, stderr io.Writer) int {
-	cfg, err := parse(args, stderr)
+func Run(args []string, version string, stdout, stderr io.Writer) int {
+	cfg, err := parseFlags(args, stderr)
 	if err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return exit.OK
@@ -28,14 +39,184 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return exit.Usage
 	}
 
-	_ = cfg
+	if cfg.ShowVersion {
+		fmt.Fprintf(stdout, "standin %s\n", version)
 
-	fmt.Fprintln(stderr, "standin: generation is not yet implemented")
+		return exit.OK
+	}
 
-	return exit.NotImplemented
+	return generate(cfg, stderr)
 }
 
-func parse(args []string, stderr io.Writer) (Config, error) {
+func generate(cfg Config, stderr io.Writer) int {
+	// Validate what we can before the expensive package load.
+	pkgName := cfg.Package
+	if pkgName == "" {
+		pkgName = filepath.Base(filepath.Clean(cfg.Destination))
+	}
+
+	if !token.IsIdentifier(pkgName) {
+		fmt.Fprintf(stderr, "standin: invalid package name %q; use -package to override\n", pkgName)
+
+		return exit.Usage
+	}
+
+	absDest, err := filepath.Abs(cfg.Destination)
+	if err != nil {
+		fmt.Fprintf(stderr, "standin: resolve destination: %v\n", err)
+
+		return exit.Error
+	}
+
+	pkg, warnings, err := parse.Load(cfg.Source)
+	if err != nil {
+		fmt.Fprintf(stderr, "standin: %v\n", err)
+
+		return exit.Error
+	}
+
+	for _, w := range warnings {
+		fmt.Fprintf(stderr, "standin: warning: %s\n", w)
+	}
+
+	// Generating into the source package would make the file import its own
+	// package and break compilation. Compare with symlinks resolved so an
+	// aliased path (e.g., /tmp vs /private/tmp on macOS) cannot bypass the
+	// check.
+	if pkg.Dir != "" && resolvePath(absDest) == resolvePath(pkg.Dir) {
+		fmt.Fprintln(stderr, "standin: -destination must be a different package from -source")
+
+		return exit.Usage
+	}
+
+	names := make(map[string]bool, len(pkg.Structs))
+	for _, s := range pkg.Structs {
+		names[s.Name] = true
+	}
+
+	excluded := make(map[string]bool, len(cfg.Excludes))
+
+	for _, ex := range cfg.Excludes {
+		if !names[ex] {
+			fmt.Fprintf(stderr, "standin: warning: -exclude %s matches no struct in %s\n", ex, pkg.Path)
+		}
+
+		excluded[ex] = true
+	}
+
+	structs := slices.DeleteFunc(slices.Clone(pkg.Structs), func(s parse.Struct) bool {
+		return excluded[s.Name]
+	})
+
+	if len(structs) == 0 {
+		fmt.Fprintf(stderr, "standin: no fixture targets found in %s\n", pkg.Path)
+
+		return exit.Error
+	}
+
+	out, err := gen.File(gen.Params{
+		PackageName: pkgName,
+		SourceName:  pkg.Name,
+		SourcePath:  pkg.Path,
+		Fixtures:    infer.Fixtures(structs, pkg.Path, pkg.Name),
+	})
+	if err != nil {
+		fmt.Fprintf(stderr, "standin: %v\n", err)
+
+		return exit.Error
+	}
+
+	//nolint:gosec // generated source directories are meant to be world-readable
+	if err := os.MkdirAll(cfg.Destination, 0o755); err != nil {
+		fmt.Fprintf(stderr, "standin: create destination: %v\n", err)
+
+		return exit.Error
+	}
+
+	path := filepath.Join(cfg.Destination, gen.FileName)
+
+	//nolint:gosec // generated source is meant to be world-readable
+	if err := os.WriteFile(path, out, 0o644); err != nil {
+		fmt.Fprintf(stderr, "standin: write %s: %v\n", path, err)
+
+		return exit.Error
+	}
+
+	if needsTidy(out, absDest) {
+		fmt.Fprintf(stderr, "standin: note: generated code imports %s; run 'go mod tidy' to add it\n", gen.GofakeitImport)
+	}
+
+	return exit.OK
+}
+
+// needsTidy reports whether the generated code imports gofakeit while the
+// destination module's go.mod does not require it yet. It is best-effort:
+// an unknown module layout just suppresses the note.
+func needsTidy(out []byte, destDir string) bool {
+	if !bytes.Contains(out, []byte(gen.GofakeitImport)) {
+		return false
+	}
+
+	gomod := findGoMod(destDir)
+	if gomod == "" {
+		return false
+	}
+
+	//nolint:gosec // the go.mod path is discovered next to the destination
+	data, err := os.ReadFile(gomod)
+	if err != nil {
+		return false
+	}
+
+	f, err := modfile.Parse(gomod, data, nil)
+	if err != nil {
+		return false
+	}
+
+	for _, r := range f.Require {
+		if r.Mod.Path == gen.GofakeitImport {
+			return false
+		}
+	}
+
+	return true
+}
+
+// resolvePath resolves symlinks best-effort, falling back to the input when
+// the path cannot be resolved (e.g., it does not exist yet).
+func resolvePath(path string) string {
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return path
+	}
+
+	return resolved
+}
+
+// findGoMod walks up from dir to locate the enclosing go.mod file.
+func findGoMod(dir string) string {
+	// Normalize so the parent walk reaches the filesystem root even for
+	// relative inputs.
+	if abs, err := filepath.Abs(dir); err == nil {
+		dir = abs
+	}
+
+	for {
+		path := filepath.Join(dir, "go.mod")
+		if _, err := os.Stat(path); err == nil {
+			return path
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return ""
+		}
+
+		dir = parent
+	}
+}
+
+func parseFlags(args []string, stderr io.Writer) (Config, error) {
 	fs := flag.NewFlagSet("standin", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.Usage = func() {
@@ -50,9 +231,15 @@ func parse(args []string, stderr io.Writer) (Config, error) {
 	fs.StringVar(&cfg.Destination, "destination", "", "output directory for the generated file")
 	fs.StringVar(&cfg.Package, "package", "", "generated package name (defaults to the destination directory name)")
 	fs.StringVar(&exclude, "exclude", "", "comma-separated type names to exclude (e.g., -exclude Foo,Bar)")
+	fs.BoolVar(&cfg.ShowVersion, "version", false, "print standin version")
+	fs.BoolVar(&cfg.ShowVersion, "v", false, "print standin version (shorthand)")
 
 	if err := fs.Parse(args); err != nil {
 		return Config{}, fmt.Errorf("parse flags: %w", err)
+	}
+
+	if cfg.ShowVersion {
+		return cfg, nil
 	}
 
 	if fs.NArg() > 0 {
