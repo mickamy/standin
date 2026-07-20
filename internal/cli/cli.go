@@ -94,14 +94,18 @@ func generate(cfg Config, stderr io.Writer) int {
 		names[s.Name] = true
 	}
 
+	excluded := make(map[string]bool, len(cfg.Excludes))
+
 	for _, ex := range cfg.Excludes {
 		if !names[ex] {
 			fmt.Fprintf(stderr, "standin: warning: -exclude %s matches no struct in %s\n", ex, pkg.Path)
 		}
+
+		excluded[ex] = true
 	}
 
 	structs := slices.DeleteFunc(slices.Clone(pkg.Structs), func(s parse.Struct) bool {
-		return slices.Contains(cfg.Excludes, s.Name)
+		return excluded[s.Name]
 	})
 
 	if len(structs) == 0 {
