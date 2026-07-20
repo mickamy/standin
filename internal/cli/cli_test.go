@@ -365,8 +365,11 @@ func TestFindGoMod(t *testing.T) {
 		t.Errorf("findGoMod(%q) = %q, want a go.mod path", ".", got)
 	}
 
-	if cli.FindGoMod(t.TempDir()) != "" {
-		t.Error("findGoMod() found a go.mod outside any module")
+	// The filesystem root is the only location guaranteed to sit outside
+	// every module; a temp dir may live under a tree that has a go.mod.
+	root := filepath.VolumeName(t.TempDir()) + string(filepath.Separator)
+	if got := cli.FindGoMod(root); got != "" {
+		t.Errorf("findGoMod(%q) = %q, want empty", root, got)
 	}
 }
 
