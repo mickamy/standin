@@ -338,6 +338,113 @@ func TestRunGenerateSameDirAsSourceViaSymlink(t *testing.T) {
 	}
 }
 
+// TestRunGenerateRelativeDestination covers a -destination that resolves to
+// the working directory, the shape a //go:generate directive sitting next to
+// the fixtures produces. It cannot run in parallel because it changes the
+// working directory.
+//
+//nolint:paralleltest // t.Chdir cannot be combined with t.Parallel
+func TestRunGenerateRelativeDestination(t *testing.T) {
+	dir := t.TempDir()
+
+	for name, body := range map[string]string{
+		"go.mod":              "module example.com/consumer\n\ngo 1.25\n",
+		"employee_fixture.go": "package fixture\n",
+		"model/model.go":      "package model\n\ntype Employee struct {\n\tName string\n}\n",
+	} {
+		path := filepath.Join(dir, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+
+	t.Chdir(dir)
+
+	var stdout, stderr bytes.Buffer
+
+	code := cli.Run([]string{"-source", "./model", "-destination", "."}, "dev", &stdout, &stderr)
+	if code != exit.OK {
+		t.Fatalf("Run() = %d, want %d\nstderr: %s", code, exit.OK, stderr.String())
+	}
+
+	if got := readGenerated(t, dir); !strings.Contains(got, "package fixture") {
+		t.Errorf("generated file does not declare package fixture:\n%s", got)
+	}
+}
+
+func TestPackageName(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		override string
+		dir      string
+		// files, when non-nil, are written into the destination directory;
+		// a nil map leaves the directory missing.
+		files map[string]string
+		want  string
+	}{
+		{
+			name:     "override wins over the declared package",
+			override: "fx",
+			dir:      "fixture",
+			files:    map[string]string{"fixture.go": "package fixture\n"},
+			want:     "fx",
+		},
+		{
+			name:  "declared package wins over the directory name",
+			dir:   "fixtures",
+			files: map[string]string{"employee_fixture.go": "package fixture\n"},
+			want:  "fixture",
+		},
+		{
+			name:  "a previously generated file does not pin the name",
+			dir:   "fixture",
+			files: map[string]string{"fixture_gen.go": "package stale\n"},
+			want:  "fixture",
+		},
+		{
+			name:  "external test files are ignored",
+			dir:   "fixture",
+			files: map[string]string{"fixture_test.go": "package fixture_test\n"},
+			want:  "fixture",
+		},
+		{
+			name: "a missing directory falls back to its name",
+			dir:  "fixture",
+			want: "fixture",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			dest := filepath.Join(t.TempDir(), tt.dir)
+
+			if tt.files != nil {
+				if err := os.MkdirAll(dest, 0o750); err != nil {
+					t.Fatalf("mkdir: %v", err)
+				}
+
+				for name, body := range tt.files {
+					if err := os.WriteFile(filepath.Join(dest, name), []byte(body), 0o600); err != nil {
+						t.Fatalf("write %s: %v", name, err)
+					}
+				}
+			}
+
+			if got := cli.PackageName(tt.override, dest); got != tt.want {
+				t.Errorf("packageName(%q, %q) = %q, want %q", tt.override, dest, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestRunGenerateInvalidPackageName(t *testing.T) {
 	t.Parallel()
 

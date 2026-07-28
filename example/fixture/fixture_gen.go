@@ -4,6 +4,7 @@ package fixture
 
 import (
 	"github.com/brianvoe/gofakeit/v7"
+	"github.com/google/uuid"
 
 	"github.com/mickamy/standin/example/model"
 )
@@ -17,6 +18,18 @@ func Article(setters ...func(m *model.Article)) model.Article {
 		Status:      model.Status(gofakeit.Word()),
 		Author:      User(),
 		PublishedAt: gofakeit.Date(),
+	}
+	for _, s := range setters {
+		s(&m)
+	}
+	return m
+}
+
+func Session(setters ...func(m *model.Session)) model.Session {
+	m := model.Session{
+		ID:        uuid.MustParse(gofakeit.UUID()),
+		UserID:    gofakeit.Int64(),
+		ExpiresAt: gofakeit.Date(),
 	}
 	for _, s := range setters {
 		s(&m)

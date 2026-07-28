@@ -3,6 +3,8 @@ package example_test
 import (
 	"testing"
 
+	"github.com/google/uuid"
+
 	"github.com/mickamy/standin/example/fixture"
 	"github.com/mickamy/standin/example/model"
 )
@@ -47,6 +49,20 @@ func TestUserSetters(t *testing.T) {
 
 	if u.Email != "alice@example.com" {
 		t.Errorf("Email = %q, want %q", u.Email, "alice@example.com")
+	}
+}
+
+func TestSession(t *testing.T) {
+	t.Parallel()
+
+	s := fixture.Session()
+
+	if s.ID == uuid.Nil {
+		t.Error("ID is the nil UUID, want a fake value")
+	}
+
+	if s.ExpiresAt.IsZero() {
+		t.Error("ExpiresAt is zero, want a fake date")
 	}
 }
 

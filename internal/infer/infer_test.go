@@ -26,7 +26,16 @@ func namedBasic(pkg *types.Package, name string, underlying types.Type) *types.N
 	return types.NewNamed(obj, underlying, nil)
 }
 
-var timeTime = namedStruct(types.NewPackage("time", "time"), "Time")
+var (
+	timeTime = namedStruct(types.NewPackage("time", "time"), "Time")
+	uuidUUID = namedBasic(
+		types.NewPackage("github.com/google/uuid", "uuid"),
+		"UUID",
+		types.NewArray(types.Typ[types.Byte], 16),
+	)
+)
+
+const uuidExpr = "uuid.MustParse(gofakeit.UUID())"
 
 func TestTagExpr(t *testing.T) {
 	t.Parallel()
@@ -44,6 +53,9 @@ func TestTagExpr(t *testing.T) {
 		{name: "known template type mismatch", tag: "{email}", typ: types.Typ[types.Int], want: ""},
 		{name: "date template on time", tag: "{date}", typ: timeTime, want: "gofakeit.Date()"},
 		{name: "date template on string", tag: "{date}", typ: types.Typ[types.String], want: `mustGenerate("{date}")`},
+		{name: "uuid template on uuid", tag: "{uuid}", typ: uuidUUID, want: uuidExpr},
+		{name: "uuid template on string", tag: "{uuid}", typ: types.Typ[types.String], want: "gofakeit.UUID()"},
+		{name: "date template on uuid", tag: "{date}", typ: uuidUUID, want: ""},
 		{
 			name: "unknown template on string",
 			tag:  "###-####",
@@ -201,6 +213,8 @@ func TestTypeExpr(t *testing.T) {
 		{name: "uint8", typ: types.Typ[types.Uint8], want: "gofakeit.Uint8()"},
 		{name: "float64", typ: types.Typ[types.Float64], want: "gofakeit.Float64()"},
 		{name: "time", typ: timeTime, want: "gofakeit.Date()"},
+		{name: "uuid", typ: uuidUUID, want: uuidExpr},
+		{name: "pointer to uuid", typ: types.NewPointer(uuidUUID), want: ""},
 		{name: "named string", typ: namedBasic(modelPkg, "Status", types.Typ[types.String]), want: ""},
 		{name: "pointer", typ: types.NewPointer(types.Typ[types.String]), want: ""},
 		{name: "slice", typ: types.NewSlice(types.Typ[types.String]), want: ""},
@@ -246,6 +260,7 @@ func TestFixtures(t *testing.T) {
 		}},
 		{Name: "User", Fields: []parse.Field{
 			{Name: "ID", Type: types.Typ[types.Int64]},
+			{Name: "Token", Type: uuidUUID},
 			{Name: "Name", Type: types.Typ[types.String], Tag: `fake:"{firstname}"`},
 			{Name: "Memo", Type: types.Typ[types.String], Tag: `fake:""`},
 			{Name: "CreatedAt", Type: timeTime},
@@ -266,6 +281,7 @@ func TestFixtures(t *testing.T) {
 		}},
 		{Name: "User", Fields: []infer.FieldValue{
 			{Name: "ID", Expr: "gofakeit.Int64()"},
+			{Name: "Token", Expr: uuidExpr},
 			{Name: "Name", Expr: "gofakeit.FirstName()"},
 			{Name: "Memo", Expr: "gofakeit.Word()"},
 			{Name: "CreatedAt", Expr: "gofakeit.Date()"},
@@ -273,8 +289,13 @@ func TestFixtures(t *testing.T) {
 		}},
 	}
 
-	got := infer.Fixtures(structs, pkgPath, "model")
+	got, imports := infer.Fixtures(structs, pkgPath, "model")
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("Fixtures() = %+v, want %+v", got, want)
+	}
+
+	wantImports := []string{"github.com/google/uuid"}
+	if !reflect.DeepEqual(imports, wantImports) {
+		t.Errorf("Fixtures() imports = %v, want %v", imports, wantImports)
 	}
 }
