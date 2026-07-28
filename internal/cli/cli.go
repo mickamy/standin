@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"go/parser"
 	"go/token"
 	"io"
 	"os"
@@ -49,23 +50,19 @@ func Run(args []string, version string, stdout, stderr io.Writer) int {
 }
 
 func generate(cfg Config, stderr io.Writer) int {
-	// Validate what we can before the expensive package load.
-	pkgName := cfg.Package
-	if pkgName == "" {
-		pkgName = filepath.Base(filepath.Clean(cfg.Destination))
-	}
-
-	if !token.IsIdentifier(pkgName) {
-		fmt.Fprintf(stderr, "standin: invalid package name %q; use -package to override\n", pkgName)
-
-		return exit.Usage
-	}
-
 	absDest, err := filepath.Abs(cfg.Destination)
 	if err != nil {
 		fmt.Fprintf(stderr, "standin: resolve destination: %v\n", err)
 
 		return exit.Error
+	}
+
+	// Validate what we can before the expensive package load.
+	pkgName := packageName(cfg.Package, absDest)
+	if !token.IsIdentifier(pkgName) {
+		fmt.Fprintf(stderr, "standin: invalid package name %q; use -package to override\n", pkgName)
+
+		return exit.Usage
 	}
 
 	pkg, warnings, err := parse.Load(cfg.Source)
@@ -147,6 +144,56 @@ func generate(cfg Config, stderr io.Writer) int {
 	}
 
 	return exit.OK
+}
+
+// packageName resolves the package name of the generated file. destDir must
+// be absolute, so that a relative -destination such as "." still yields a
+// directory name.
+func packageName(override, destDir string) string {
+	if override != "" {
+		return override
+	}
+
+	if name := declaredPackage(destDir); name != "" {
+		return name
+	}
+
+	return filepath.Base(destDir)
+}
+
+// declaredPackage returns the package the Go files in dir already declare;
+// every file in a directory has to agree on it, so the generated file has no
+// choice either. The generated file itself is skipped so a name written by a
+// previous run cannot pin the next one, and test files are skipped because
+// they may sit in an external _test package. An unreadable directory yields an
+// empty name.
+func declaredPackage(dir string) string {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return ""
+	}
+
+	fset := token.NewFileSet()
+
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || name == gen.FileName {
+			continue
+		}
+
+		if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+
+		f, err := parser.ParseFile(fset, filepath.Join(dir, name), nil, parser.PackageClauseOnly)
+		if err != nil {
+			continue
+		}
+
+		return f.Name.Name
+	}
+
+	return ""
 }
 
 // needsTidy reports whether the generated code imports gofakeit while the
@@ -287,7 +334,7 @@ func PrintUsage(w io.Writer) {
 	fmt.Fprintln(w, "FLAGS:")
 	fmt.Fprintln(w, "  -source <pkg>        source package to scan (relative path or import path)")
 	fmt.Fprintln(w, "  -destination <dir>   output directory for the generated file")
-	fmt.Fprintln(w, "  -package <name>      generated package name (defaults to the destination directory name)")
+	fmt.Fprintln(w, "  -package <name>      generated package name (defaults to the package the destination declares)")
 	fmt.Fprintln(w, "  -exclude <names>     comma-separated type names to exclude (e.g., -exclude Foo,Bar)")
 	fmt.Fprintln(w, "  --version, -v        print standin version")
 	fmt.Fprintln(w, "  --help, -h           show this help")

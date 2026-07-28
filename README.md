@@ -106,14 +106,14 @@ The generated code depends only on gofakeit; standin reminds you to run `go mod 
 standin -source <pkg> -destination <dir> [flags]
 ```
 
-| Flag                 | Description                                                       |
-|----------------------|-------------------------------------------------------------------|
-| `-source <pkg>`      | Source package to scan (relative path or import path). Required.  |
-| `-destination <dir>` | Output directory for `fixture_gen.go`. Required.                  |
-| `-package <name>`    | Generated package name. Default: the destination directory name.  |
-| `-exclude <names>`   | Comma-separated type names to exclude (e.g., `-exclude Foo,Bar`). |
-| `--version`, `-v`    | Print version.                                                    |
-| `--help`, `-h`       | Show help.                                                        |
+| Flag                 | Description                                                                                                       |
+|----------------------|-------------------------------------------------------------------------------------------------------------------|
+| `-source <pkg>`      | Source package to scan (relative path or import path). Required.                                                  |
+| `-destination <dir>` | Output directory for `fixture_gen.go`. Required.                                                                  |
+| `-package <name>`    | Generated package name. Default: the package the destination directory already declares, else its directory name. |
+| `-exclude <names>`   | Comma-separated type names to exclude (e.g., `-exclude Foo,Bar`).                                                 |
+| `--version`, `-v`    | Print version.                                                                                                    |
+| `--help`, `-h`       | Show help.                                                                                                        |
 
 An `-exclude` name that matches no struct produces a warning, and excluding every struct is an error — the existing
 generated file is left untouched.
