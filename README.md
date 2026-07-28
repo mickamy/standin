@@ -96,7 +96,8 @@ alice := fixture.User(func (m *model.User) {
 })
 ```
 
-The generated code depends only on gofakeit; standin reminds you to run `go mod tidy` after the first generation.
+The generated code depends only on gofakeit, plus the packages of the well-known types it fills (currently
+`github.com/google/uuid`); standin reminds you to run `go mod tidy` when the destination module is missing one.
 
 ---
 
@@ -143,7 +144,7 @@ as the zero value — predictability over coverage.
 1. **`fake` struct tag** — gofakeit's existing tag convention, so models already tagged for `gofakeit.Struct` work
    as-is.
 2. **Field name** — a small table of high-confidence names, applied only when the type matches.
-3. **Field type** — basic types and `time.Time`.
+3. **Field type** — basic types and a small table of well-known named types (`time.Time`, `uuid.UUID`).
 4. **Structs from the source package** — a value field whose type has its own fixture calls it: `Profile: Profile()`.
 5. **Everything else** — zero value.
 
@@ -165,10 +166,12 @@ A known template whose field type does not match falls through the same way: `fa
 
 Known no-parameter templates, applied when the field type matches:
 
-| Template                                                                                               | Call                       | Field type  |
-|--------------------------------------------------------------------------------------------------------|----------------------------|-------------|
-| `{email}` `{firstname}` `{lastname}` `{name}` `{phone}` `{url}` `{uuid}` `{word}` `{city}` `{country}` | the matching gofakeit call | `string`    |
-| `{date}`                                                                                               | `gofakeit.Date()`          | `time.Time` |
+| Template                                                                                               | Call                              | Field type  |
+|--------------------------------------------------------------------------------------------------------|-----------------------------------|-------------|
+| `{email}` `{firstname}` `{lastname}` `{name}` `{phone}` `{url}` `{word}` `{city}` `{country}`          | the matching gofakeit call        | `string`    |
+| `{uuid}`                                                                                               | `gofakeit.UUID()`                 | `string`    |
+| `{date}`                                                                                               | `gofakeit.Date()`                 | `time.Time` |
+| `{uuid}`                                                                                               | `uuid.MustParse(gofakeit.UUID())` | `uuid.UUID` |
 
 Known parameterized templates, with arguments validated as Go literals:
 
@@ -221,8 +224,13 @@ Applied only when the field type matches the call's result type.
 | `uint` `uint8` `uint16` `uint32` `uint64` | the matching `gofakeit.Uint*()`             |
 | `float32` `float64`                       | `gofakeit.Float32()` / `gofakeit.Float64()` |
 | `time.Time`                               | `gofakeit.Date()`                           |
+| `uuid.UUID` (`github.com/google/uuid`)    | `uuid.MustParse(gofakeit.UUID())`           |
 
 Type aliases are resolved to their underlying type before inference.
+
+The named types in this table are the only ones standin fills from other packages, and every value still comes from
+gofakeit so a single `gofakeit.Seed` keeps fixtures reproducible. When a fixture uses one, the generated file imports
+that package alongside gofakeit.
 
 ### 4. Zero values
 
@@ -231,7 +239,7 @@ The following stay at their zero value, on purpose:
 - **Pointers** — `nil` respects nullable semantics; set one with a setter when a test needs it.
 - **Slices, maps, interfaces, channels, funcs** — `nil`.
 - **Named basic types** (e.g., `type Status string`) — standin cannot know the valid values; add a `fake` tag to opt in (see the tag section above).
-- **Structs from other packages** (except `time.Time`).
+- **Named types from other packages** other than the well-known ones listed above.
 - **Unexported fields** — not settable from the fixture package.
 
 Foreign keys and associations are intentionally out of scope: fixtures fill values, and the setter is the escape hatch

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"go/format"
+	"slices"
 	"strings"
 
 	"github.com/mickamy/standin/internal/infer"
@@ -24,6 +25,9 @@ type Params struct {
 	SourceName string
 	// SourcePath is the source package import path.
 	SourcePath string
+	// Imports holds the import paths the fixture expressions need beyond
+	// gofakeit.
+	Imports []string
 	// Fixtures holds the fixture bodies in output order.
 	Fixtures []infer.Fixture
 }
@@ -69,10 +73,21 @@ func File(p Params) ([]byte, error) {
 }
 
 func writeImports(buf *bytes.Buffer, p Params) {
+	deps := slices.Clone(p.Imports)
+	if needsGofakeit(p.Fixtures) {
+		deps = append(deps, GofakeitImport)
+	}
+
+	slices.Sort(deps)
+
 	buf.WriteString("\nimport (\n")
 
-	if needsGofakeit(p.Fixtures) {
-		fmt.Fprintf(buf, "\t%q\n\n", GofakeitImport)
+	for _, path := range deps {
+		fmt.Fprintf(buf, "\t%q\n", path)
+	}
+
+	if len(deps) > 0 {
+		buf.WriteString("\n")
 	}
 
 	fmt.Fprintf(buf, "\t%q\n)\n", p.SourcePath)

@@ -2,7 +2,9 @@ package infer
 
 import (
 	"go/types"
+	"maps"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -22,6 +24,13 @@ type Fixture struct {
 	Fields []FieldValue
 }
 
+// value is an inferred field expression together with the import path it
+// needs beyond gofakeit. An empty expr leaves the field at its zero value.
+type value struct {
+	expr string
+	pkg  string
+}
+
 // inferrer carries the source package identity needed to resolve
 // same-package references and named-type conversions.
 type inferrer struct {
@@ -35,8 +44,9 @@ type inferrer struct {
 // pkgName identify the source package, whose name qualifies the emitted
 // types. structs must already be filtered down to the set that gets a
 // fixture function; references to types outside that set fall back to zero
-// values.
-func Fixtures(structs []parse.Struct, pkgPath, pkgName string) []Fixture {
+// values. The second return value holds the import paths the expressions
+// need beyond gofakeit, sorted.
+func Fixtures(structs []parse.Struct, pkgPath, pkgName string) ([]Fixture, []string) {
 	targets := make(map[string]bool, len(structs))
 	for _, s := range structs {
 		targets[s.Name] = true
@@ -46,29 +56,34 @@ func Fixtures(structs []parse.Struct, pkgPath, pkgName string) []Fixture {
 	inf.graph = inf.referenceGraph(structs)
 
 	fixtures := make([]Fixture, 0, len(structs))
+	imports := make(map[string]bool)
 
 	for _, s := range structs {
 		fx := Fixture{Name: s.Name}
 
 		for _, f := range s.Fields {
-			expr := inf.fieldExpr(f, s.Name)
-			if expr == "" {
+			v := inf.fieldExpr(f, s.Name)
+			if v.expr == "" {
 				continue
 			}
 
-			fx.Fields = append(fx.Fields, FieldValue{Name: f.Name, Expr: expr})
+			if v.pkg != "" {
+				imports[v.pkg] = true
+			}
+
+			fx.Fields = append(fx.Fields, FieldValue{Name: f.Name, Expr: v.expr})
 		}
 
 		fixtures = append(fixtures, fx)
 	}
 
-	return fixtures
+	return fixtures, slices.Sorted(maps.Keys(imports))
 }
 
 // fieldExpr returns the Go expression assigned to the field, applying the
-// inference rules in priority order. An empty string means the field is
+// inference rules in priority order. An empty expression means the field is
 // omitted from the literal (zero value).
-func (inf inferrer) fieldExpr(f parse.Field, owner string) string {
+func (inf inferrer) fieldExpr(f parse.Field, owner string) value {
 	typ := types.Unalias(f.Type)
 
 	// An empty fake tag is not a directive; gofakeit generates such fields
@@ -78,20 +93,65 @@ func (inf inferrer) fieldExpr(f parse.Field, owner string) string {
 	}
 
 	if expr, ok := nameExpr(f.Name, typ); ok {
-		return expr
+		return value{expr: expr}
 	}
 
 	if name, ok := inf.fixtureRef(typ); ok {
 		if reaches(inf.graph, name, owner) {
 			// Calling the fixture would recurse forever; fall back to the
 			// zero value.
-			return ""
+			return value{}
 		}
 
-		return name + "()"
+		return value{expr: name + "()"}
 	}
 
 	return typeExpr(typ)
+}
+
+// externalValues maps a named type declared in another package, keyed by
+// "<import path>.<type name>", to the value that fills it. Everything here is
+// driven by gofakeit so a single gofakeit.Seed still makes fixtures
+// reproducible.
+var externalValues = map[string]value{
+	"time.Time":                   {expr: "gofakeit.Date()"},
+	"github.com/google/uuid.UUID": {expr: "uuid.MustParse(gofakeit.UUID())", pkg: "github.com/google/uuid"},
+}
+
+// externalTemplates maps a gofakeit template to the external type it fills, so
+// that an explicit tag resolves to the same value the type rule would pick.
+var externalTemplates = map[string]string{
+	"{date}": "time.Time",
+	"{uuid}": "github.com/google/uuid.UUID",
+}
+
+// externalName returns the "<import path>.<type name>" key of a named type
+// declared in another package.
+func externalName(typ types.Type) (string, bool) {
+	named, ok := typ.(*types.Named)
+	if !ok {
+		return "", false
+	}
+
+	obj := named.Obj()
+	if obj.Pkg() == nil {
+		return "", false
+	}
+
+	return obj.Pkg().Path() + "." + obj.Name(), true
+}
+
+// externalValue returns the value registered for a named type from another
+// package.
+func externalValue(typ types.Type) (value, bool) {
+	name, ok := externalName(typ)
+	if !ok {
+		return value{}, false
+	}
+
+	v, ok := externalValues[name]
+
+	return v, ok
 }
 
 // basicOf resolves typ to its basic type. For a named basic type declared in
@@ -149,36 +209,38 @@ var stringTagCalls = map[string]string{
 // mustGenerate helper for string fields and to the zero value otherwise.
 // Named basic types from the source package are supported through a
 // conversion, e.g. model.Status(gofakeit.Word()).
-func (inf inferrer) tagExpr(tag string, typ types.Type) string {
+func (inf inferrer) tagExpr(tag string, typ types.Type) value {
 	// gofakeit treats both "skip" and "-" as skip markers.
 	if tag == "" || tag == "skip" || tag == "-" {
-		return ""
+		return value{}
 	}
 
-	if tag == "{date}" && isTime(typ) {
-		return "gofakeit.Date()"
+	if want, ok := externalTemplates[tag]; ok {
+		if name, ok := externalName(typ); ok && name == want {
+			return externalValues[want]
+		}
 	}
 
 	b, qualifier, ok := inf.basicOf(typ)
 	if !ok {
-		return ""
+		return value{}
 	}
 
 	if expr, ok := stringTagCalls[tag]; ok && b.Kind() == types.String {
-		return qualify(expr, qualifier)
+		return value{expr: qualify(expr, qualifier)}
 	}
 
 	if expr, ok := inf.paramTagExpr(tag, b, qualifier); ok {
-		return expr
+		return value{expr: expr}
 	}
 
 	if b.Kind() == types.String {
 		// mustGenerate is a helper emitted into the generated file; the
 		// two-value gofakeit.Generate cannot be called in a composite literal.
-		return qualify("mustGenerate("+strconv.Quote(tag)+")", qualifier)
+		return value{expr: qualify("mustGenerate("+strconv.Quote(tag)+")", qualifier)}
 	}
 
-	return ""
+	return value{}
 }
 
 type argClass int
@@ -400,11 +462,16 @@ func nameExpr(name string, typ types.Type) (string, bool) {
 
 // typeExpr applies the type-based rules. Pointers, slices, maps, interfaces,
 // channels, funcs, and named non-struct types all fall back to zero values.
-func typeExpr(typ types.Type) string {
-	if isTime(typ) {
-		return "gofakeit.Date()"
+func typeExpr(typ types.Type) value {
+	if v, ok := externalValue(typ); ok {
+		return v
 	}
 
+	return value{expr: basicExpr(typ)}
+}
+
+// basicExpr returns the gofakeit call matching a basic type.
+func basicExpr(typ types.Type) string {
 	b, ok := typ.(*types.Basic)
 	if !ok {
 		return ""
@@ -521,12 +588,7 @@ func isString(typ types.Type) bool {
 }
 
 func isTime(typ types.Type) bool {
-	named, ok := typ.(*types.Named)
-	if !ok {
-		return false
-	}
+	name, ok := externalName(typ)
 
-	obj := named.Obj()
-
-	return obj.Pkg() != nil && obj.Pkg().Path() == "time" && obj.Name() == "Time"
+	return ok && name == "time.Time"
 }

@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 
 	"golang.org/x/mod/modfile"
@@ -111,11 +112,14 @@ func generate(cfg Config, stderr io.Writer) int {
 		return exit.Error
 	}
 
+	fixtures, imports := infer.Fixtures(structs, pkg.Path, pkg.Name)
+
 	out, err := gen.File(gen.Params{
 		PackageName: pkgName,
 		SourceName:  pkg.Name,
 		SourcePath:  pkg.Path,
-		Fixtures:    infer.Fixtures(structs, pkg.Path, pkg.Name),
+		Imports:     imports,
+		Fixtures:    fixtures,
 	})
 	if err != nil {
 		fmt.Fprintf(stderr, "standin: %v\n", err)
@@ -139,8 +143,8 @@ func generate(cfg Config, stderr io.Writer) int {
 		return exit.Error
 	}
 
-	if needsTidy(out, absDest) {
-		fmt.Fprintf(stderr, "standin: note: generated code imports %s; run 'go mod tidy' to add it\n", gen.GofakeitImport)
+	if missing := missingRequires(out, imports, absDest); len(missing) > 0 {
+		fmt.Fprintf(stderr, "standin: note: generated code imports %s; run 'go mod tidy'\n", strings.Join(missing, ", "))
 	}
 
 	return exit.OK
@@ -196,37 +200,47 @@ func declaredPackage(dir string) string {
 	return ""
 }
 
-// needsTidy reports whether the generated code imports gofakeit while the
-// destination module's go.mod does not require it yet. It is best-effort:
-// an unknown module layout just suppresses the note.
-func needsTidy(out []byte, destDir string) bool {
-	if !bytes.Contains(out, []byte(gen.GofakeitImport)) {
-		return false
-	}
-
+// missingRequires returns the third-party imports of the generated code that
+// the destination module's go.mod does not require yet, sorted. It is
+// best-effort: an unknown module layout just suppresses the note.
+func missingRequires(out []byte, imports []string, destDir string) []string {
 	gomod := findGoMod(destDir)
 	if gomod == "" {
-		return false
+		return nil
 	}
 
 	//nolint:gosec // the go.mod path is discovered next to the destination
 	data, err := os.ReadFile(gomod)
 	if err != nil {
-		return false
+		return nil
 	}
 
 	f, err := modfile.Parse(gomod, data, nil)
 	if err != nil {
-		return false
+		return nil
 	}
 
+	required := make(map[string]bool, len(f.Require))
 	for _, r := range f.Require {
-		if r.Mod.Path == gen.GofakeitImport {
-			return false
-		}
+		required[r.Mod.Path] = true
 	}
 
-	return true
+	candidates := append(slices.Clone(imports), gen.GofakeitImport)
+	slices.Sort(candidates)
+
+	var missing []string
+
+	for _, path := range candidates {
+		// gofakeit is a candidate whether or not the output uses it, so match
+		// against the import line the generator actually wrote.
+		if required[path] || !bytes.Contains(out, []byte(strconv.Quote(path))) {
+			continue
+		}
+
+		missing = append(missing, path)
+	}
+
+	return missing
 }
 
 // resolvePath resolves symlinks best-effort, falling back to the input when

@@ -1,6 +1,10 @@
 package model
 
-import "time"
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
 
 // User is an application user.
 type User struct {
@@ -10,6 +14,13 @@ type User struct {
 	Age       int `fake:"{number:18,65}"`
 	Bio       *string
 	CreatedAt time.Time
+}
+
+// Session is a signed-in browser session.
+type Session struct {
+	ID        uuid.UUID
+	UserID    int64
+	ExpiresAt time.Time
 }
 
 // Status is the publication status of an article.
