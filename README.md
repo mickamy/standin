@@ -1,5 +1,8 @@
 # standin
 
+> [!IMPORTANT]
+> This repository is archived. Development continues in [kanna](https://github.com/go-kanna/kanna), where standin became [`kanna-fixture`](https://github.com/go-kanna/kanna#kanna-fixture).
+
 **standin** is a command-line tool that generates plain test fixture functions from Go structs.
 
 Unlike factory libraries that bring a runtime API or a builder DSL into your tests, standin does all its work at
